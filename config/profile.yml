@@ -1,0 +1,25 @@
+name: "Atharva Dwivedi"
+target_roles: 
+    - "Backend Engineer"
+    - "ML Engineer"
+    - "AI/ML Engineer"
+
+target_locations:
+    - "Bengalurur"
+    - "Delhi NCR"
+    - "Mumbai"
+    - "Remote"
+
+experience_years: 1
+skills:
+    core: ["Python", "Go", "FastAPI", "Docker"]
+    ai_ml: ["LangChain", "LangGraph", "RAG", "ChromaDB", "FastAPI"]
+    databases: ["MongoDB", "Redis", "PostgreSQL"]
+    other:    ["WebSockets", "REST APIs", "Git"]
+
+target_companies:
+    - type: "startup"
+    - type: "ai-native"
+
+min_score_to_apply:  "B"
+salary_min_inr: 500000

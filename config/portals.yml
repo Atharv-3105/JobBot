@@ -1,0 +1,20 @@
+portals:
+  greenhouse:
+      enabled:  true 
+      companies: 
+          - "acme-corp"
+          - "tech-startup"
+
+  lever:
+      enabled:   true 
+      companies:
+          - "innovate-labs"
+  
+  ashby:
+      enabled:    true 
+      companies:
+          - "future-ai"
+
+  wellfound:
+      enabled:    true 
+      
