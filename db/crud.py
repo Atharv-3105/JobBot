@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional, List 
 import os 
 import json
+from contextlib import contextmanager
 
 from db.models import Base, User, Job, Application, JobStatus
 
@@ -19,7 +20,8 @@ def init_db():
     
     os.makedirs("./data", exist_ok =True)
     Base.metadata.create_all(bind = engine)
-    
+
+@contextmanager
 def get_db():
     """  
         Dependency Injection to get DB session
