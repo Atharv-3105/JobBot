@@ -1,0 +1,80 @@
+import httpx 
+from typing import List, Optional
+import asyncio
+import random 
+import logging 
+
+from portals.base import BaseCrawler, JobListing 
+
+logger = logging.getLogger(__name__)
+
+BASE_URL = "https://jobs.ashbyhq.com/api/non-user-portal/job-board"
+
+class AshbyCrawler(BaseCrawler):
+    """ 
+        Crawls Ashby ATS via their public Job Board API.
+        No authentication needed, No stealth needed.
+        
+        Endpoint: GET /api/non-user-portal/job-board/{company}
+        RETURNS a JSON object with a 'JobPostings' array
+    """
+    
+    async def search(self, keyword: str, location: Optional[str] = None) -> List[JobListing]:
+        
+        results: List[JobListing] = []
+        
+        async with httpx.AsyncClient(timeout = 30.0) as client: 
+            for company_slug in self.companies:
+                if len(results) >= self.max_results:
+                    break 
+                
+                try:
+                    listings = await self._search_company(client, company_slug, keyword, location)
+                    results.extend(listings)
+                except Exception as e:
+                    logger.warning(f"Ashby: failed to crawl '{company_slug}' : {e}")
+                    continue 
+                
+                
+                await asyncio.sleep(random.uniform(2.0, 5.0))
+                
+            return results[:self.max_results]
+        
+        
+    async def _search_company(self, client: httpx.AsyncClient, slug: str, keyword: str, location: Optional[str]) -> List[JobListing]:
+        
+        results = []
+        
+        url = f"{BASE_URL}/{slug}"
+        response = await client.get(url)
+        response.raise_for_status()
+        data = response.json()
+        
+        jobs = data.get("jobPostings", [])
+        if not jobs:
+            logger.info(f"Ashby: No open JOBS for '{slug}'")
+            return results 
+        
+        for job in jobs:
+            title = job.get("title", "")
+            job_location = job.get("locationName", "")
+            description = job.get("descriptionPlain", "")
+            job_id = job.get("id", "")
+            
+            #Build the canonical URL for this Job
+            job_url = f"https://jobs.ashbyhq.com/{slug}/{job_id}"
+            
+            searchable_text = f"{title} {description}"
+            if not self._keyword_match(searchable_text, keyword):
+                continue 
+            
+            if location and not self._keyword_match(job_location, location):
+                continue 
+            
+            listing = JobListing(title = title, company = slug.replace("-", " ").title(),
+                                 url = job_url, portal = "ashby", jd_text = description,
+                                 location = job_location, portal_job_id = str(job_id))
+            
+            results.append(listing)
+            
+        return results 
