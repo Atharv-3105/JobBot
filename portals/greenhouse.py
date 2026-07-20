@@ -71,8 +71,11 @@ class GreenhouseCrawler(BaseCrawler):
             title = job.get("title", "")
             job_location = self._extract_location(job)
             
+            #Check title + JD TEXT
+            searchable_text = f"{title} {jd_text}"
+            
             #Check keyword match in title
-            if not self._keyword_match(title, keyword):
+            if not self._keyword_match(searchable_text, keyword):
                 continue 
             
             #Check location match if specified
@@ -96,13 +99,16 @@ class GreenhouseCrawler(BaseCrawler):
     def _extract_location(self, job: dict) -> str: 
         """ 
             This function is used to extract location string from GreenHouse job object.
+            GreenHouse returns locations as List
         """
         
-        location_obj = job.get("locations", {})
-        if isinstance(location_obj, dict):
-            return location_obj.get("name", "")
+        locations  = job.get("locations", {})
+        if isinstance(locations, list) and locations:
+            return locations[0].get("name", "")
         
-        return str(location_obj) if location_obj  else ""
+        if isinstance(locations, dict):
+            return locations.get("name", "")
+        return ""
     
     def _html_to_text(self, html: str) -> str: 
         """ 

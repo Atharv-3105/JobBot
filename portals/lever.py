@@ -57,7 +57,12 @@ class LeverCrawler(BaseCrawler):
             categories = job.get("categories", {})
             job_location = categories.get("location", "")
             description = job.get("descriptionPlain", "")
-            apply_url = job.get("applyUrl", "")
+            
+            #Check for None or missing url as Lever sometimes has it
+            apply_url = job.get("applyUrl", "") or job.get("hostedUrl", "")
+            if not apply_url:
+                logger.debug(f"Lever: skipping job '{title}' at '{slug}' - no apply URL")
+                continue
             
             #Keyword match against title + description
             searchable_text = f"{title} {description}"
@@ -68,6 +73,7 @@ class LeverCrawler(BaseCrawler):
             if location and not self._keyword_match(job_location, location):
                 continue 
             
+
             listing = JobListing(title = title, company = slug.replace("-", " ").title(),
                                  url = apply_url, portal = "lever", jd_text = description, location = job_location,
                                  portal_job_id = str(job.get("id", "")))

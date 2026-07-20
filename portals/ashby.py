@@ -3,6 +3,7 @@ from typing import List, Optional
 import asyncio
 import random 
 import logging 
+from bs4 import BeautifulSoup
 
 from portals.base import BaseCrawler, JobListing 
 
@@ -58,7 +59,10 @@ class AshbyCrawler(BaseCrawler):
         for job in jobs:
             title = job.get("title", "")
             job_location = job.get("locationName", "")
-            description = job.get("descriptionPlain", "")
+            
+            #Ashby has description under descriptionHTML
+            description_html = job.get("descriptionHtml", "")
+            description = self._html_to_text(description_html)
             job_id = job.get("id", "")
             
             #Build the canonical URL for this Job
@@ -78,3 +82,14 @@ class AshbyCrawler(BaseCrawler):
             results.append(listing)
             
         return results 
+    
+    def _html_to_text(self, html: str) -> str:
+        if not html:
+            return ""
+        
+        soup = BeautifulSoup(html, "html.parser")
+        for element in soup(["script", "style"]):
+            element.decompose()
+            
+        lines = [line.strip() for line in soup.get_text(separator = "\n").splitlines() if line.strip()]
+        return "\n".join(lines)

@@ -29,10 +29,12 @@ class WellfoundCrawler(BaseCrawler):
             
             try:
                 #Build the search URL
-                search_url = f"https://wellfound.com/role/l/{keyword.lower().replace(' ', '-')}"
+                keyword_slug = keyword.lower().strip().replace(" ", "-").replace(",", "")
+                search_url = f"https://wellfound.com/role/r/{keyword_slug}"
                 
                 if location:
-                    search_url += f"/{location.lower().replace(' ', '-')}"
+                    location_slug = location.lower().strip().replace(" ", "-")
+                    search_url += f"?location={location_slug}"
                     
                 await page.goto(search_url, wait_until = "networkidle", timeout = 30000)
                 await random_delay(2000, 4000)
@@ -99,9 +101,10 @@ class WellfoundCrawler(BaseCrawler):
         lines = [line.strip() for line in text_content.split("\n") if line.strip()]
         
         #Heuristic parsing: first line is usually title, second is company 
-        title = lines[0] if len(lines) > 0 else "Unknown Title"
-        company = lines[1] if len(lines) > 1 else "Unknown Company"
-        location = lines[2] if len(lines) > 2 else ""
+        useful_lines = [l for l in lines if len(l) > 3]
+        title = useful_lines[0] if len(useful_lines) > 0 else "Unknown Title"
+        company = useful_lines[1] if len(useful_lines) > 1 else "Unknown Company"
+        location = useful_lines[2] if len(useful_lines) > 2 else ""
         
         return JobListing(title = title, company = company, url = url, portal = "wellfound",
                           jd_text = text_content, location = location, portal_job_id = href.split("/")[-1] if "/" in href else "")
