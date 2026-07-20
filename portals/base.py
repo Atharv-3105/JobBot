@@ -48,6 +48,9 @@ class BaseCrawler(ABC):
             This function will check for case-insensitive keyword match against title + description
             Will support Comma-separated keywords (meaning it will match ANY keyword)
         """
+        if not text:
+            return False 
+        
         text_lower = text.lower()
         
         #Comma-separated keyword checking
