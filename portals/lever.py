@@ -64,9 +64,9 @@ class LeverCrawler(BaseCrawler):
                 logger.debug(f"Lever: skipping job '{title}' at '{slug}' - no apply URL")
                 continue
             
-            #Keyword match against title + description
-            searchable_text = f"{title} {description}"
-            if not self._keyword_match(searchable_text, keyword):
+            # #Keyword match against title + description
+            # searchable_text = f"{title} {description}"
+            if not self._keyword_match(title, keyword):
                 continue 
             
             #Search for location if mentioned 
