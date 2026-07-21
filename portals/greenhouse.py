@@ -57,7 +57,7 @@ class GreenhouseCrawler(BaseCrawler):
         
         #Step1: GET all open Jobs for this company
         url = f"{BASE_URL}/{slug}/jobs"
-        response = await client.get(url, params = {"content": "true"})
+        response = await client.get(url, params = {"content": "true"}) #removed content = true 
         response.raise_for_status()
         data = response.json()
         
@@ -69,22 +69,32 @@ class GreenhouseCrawler(BaseCrawler):
         #Step2: Filter by keyword and location if metioned
         for job in jobs: 
             title = job.get("title", "")
+            #Early check to skip unmatched Jobs
+            if not self._keyword_match(title, keyword):
+                continue 
+                
+            #Step3: get locations + JD(only for title matches)
+            jd_text = self._html_to_text(job.get("content", ""))
             job_location = self._extract_location(job)
             
-            #Check title + JD TEXT
-            searchable_text = f"{title} {jd_text}"
+            logger.info(f"Greenhouse: MATCHED '{title}' at '{job_location}'")
             
-            #Check keyword match in title
-            if not self._keyword_match(searchable_text, keyword):
-                continue 
-            
-            #Check location match if specified
+            #Step4: Check location filter if specified
             if location and not self._keyword_match(job_location, location):
+                logger.info(f"Greenhouse: SKIPPED '{title}' - location '{job_location}' doesn't match '{location}'")
                 continue 
             
-            #Step3: Extract and clean the JD
-            raw_content = job.get("content", "")
-            jd_text = self._html_to_text(raw_content)
+            
+            # #Step3: Extract and clean the JD
+            # raw_content = job.get("content", "")
+            # jd_text = self._html_to_text(raw_content)
+
+            # logger.info(f"Greenhouse checking '{title}' against keyword '{keyword}'")
+            # #Check keyword match in title
+            # if not self._keyword_match(title, keyword):
+            #     logger.info(f"Greenhouse: SKIPPED '{title}'")
+            #     continue 
+            # logger.info(f"Greenhouse: MATCHED '{title}'")
             
             listing = JobListing(title = title, company = slug.replace("-", " ").title(),
                                  url = job.get("absolute_url", ""), portal = "greenhouse",
@@ -93,8 +103,9 @@ class GreenhouseCrawler(BaseCrawler):
             results.append(listing)
             
             
+            await asyncio.sleep(random.uniform(0.5, 1.5))
+            
         return results 
-    
     
     def _extract_location(self, job: dict) -> str: 
         """ 
@@ -102,12 +113,24 @@ class GreenhouseCrawler(BaseCrawler):
             GreenHouse returns locations as List
         """
         
-        locations  = job.get("locations", {})
-        if isinstance(locations, list) and locations:
-            return locations[0].get("name", "")
+        location  = job.get("location", {})
+        # logger.debug(f"Greenhouse: raw locations field = {locations}")
         
-        if isinstance(locations, dict):
-            return locations.get("name", "")
+        if isinstance(location, dict):
+            name = location.get("name", "")
+            if name:
+                return name
+        
+        #Fallback logic
+        metadata = job.get("metadata", [])
+        for field in metadata:
+            if isinstance(field, dict):
+                field_name = field.get("name", "").lower()
+                if "location" in field_name or "office" in field_name:
+                    value = field.get("value")
+                    if value:
+                        return str(value)
+                    
         return ""
     
     def _html_to_text(self, html: str) -> str: 
