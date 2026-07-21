@@ -9,7 +9,7 @@ from portals.base import BaseCrawler, JobListing
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://jobs.ashbyhq.com/api/non-user-portal/job-board"
+BASE_URL = "https://api.ashbyhq.com/posting-api/job-board"
 
 class AshbyCrawler(BaseCrawler):
     """ 
@@ -51,22 +51,25 @@ class AshbyCrawler(BaseCrawler):
         response.raise_for_status()
         data = response.json()
         
-        jobs = data.get("jobPostings", [])
+        jobs = data.get("jobs", [])
         if not jobs:
             logger.info(f"Ashby: No open JOBS for '{slug}'")
             return results 
         
         for job in jobs:
             title = job.get("title", "")
-            job_location = job.get("locationName", "")
+            job_location = job.get("location", "")
             
             #Ashby has description under descriptionHTML
-            description_html = job.get("descriptionHtml", "")
-            description = self._html_to_text(description_html)
+            description = job.get("descriptionPlain", "")
+            if not description:
+                description_html = job.get("descriptionHtml", "") or job.get("description", "")
+                description = self._html_to_text(description_html)
+                
             job_id = job.get("id", "")
             
             #Build the canonical URL for this Job
-            job_url = f"https://jobs.ashbyhq.com/{slug}/{job_id}"
+            job_url = job.get("jobUrl", f"https://jobs.ashbyhq.com/{slug}/{job_id}")
             
             searchable_text = f"{title} {description}"
             if not self._keyword_match(searchable_text, keyword):
