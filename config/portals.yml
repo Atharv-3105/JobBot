@@ -1,5 +1,5 @@
 portals:
-  greenhouse:
+    greenhouse:
       enabled:  true 
       companies: 
           - "stripe"
@@ -8,14 +8,14 @@ portals:
           - "rippling"
           - "shopify"
 
-  lever:
+    lever:
       enabled:   true 
       companies:
           - "netflix"
           - "scale-ai"
           - "plaid"
   
-  ashby:
+    ashby:
       enabled:    true 
       companies:
           - "anthropic"
@@ -23,6 +23,20 @@ portals:
           - "retool"
           - "brex"
 
-  wellfound:
-      enabled:    true 
+    wellfound:
+      enabled:    false 
+      
+  
+    remotive:
+        enabled:  true 
+        companies: []
+  
+    himalayas:
+        enabled: true 
+        companies: []
+
+    hackernews:
+        enabled: true
+        companies: []
+  
       
