@@ -5,6 +5,29 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+#Role-Aliases dictionaries to support similar roles
+ROLE_ALIASES = {
+    "ml engineer": [
+        "ml engineer", "machine learning engineer", "ai engineer",
+        "applied scientist", "research engineer", "applied ml"
+    ],
+    "backend engineer": [
+        "backend engineer", "software engineer", "api engineer",
+        "platform engineer", "infrastructure engineer", "sde",
+        "software development engineer"
+    ],
+    "frontend engineer": [
+        "frontend engineer", "front-end engineer", "ui engineer",
+        "react engineer", "web engineer"
+    ],
+    "full stack":[
+        "full stack", "fullstack", "full-stack"
+    ],
+    "data engineer": [
+        "data engineer", "analytics engineer", "data platform engineer", "data scientist"
+    ],
+}
+
 @dataclass 
 class JobListing:
     """ 
@@ -53,7 +76,16 @@ class BaseCrawler(ABC):
         
         text_lower = text.lower()
         
-        #Comma-separated keyword checking
-        terms = [t.strip().lower() for t in keyword.split(",")]
-        return any(term in text_lower for term in terms if term)
+        #Expand comma-separated input terms
+        input_terms = [t.strip().lower() for t in keyword.split(",") if t.strip()]
+        
+        #For each input term, we collect it + it's aliases
+        all_terms = set()
+        for term in input_terms:
+            all_terms.add(term)
+            for key, aliases in ROLE_ALIASES.items():
+                if term == key or term in aliases:
+                    all_terms.update(aliases)
+        
+        return any(term in text_lower for term in all_terms)
         
