@@ -2,18 +2,26 @@ portals:
   greenhouse:
       enabled:  true 
       companies: 
-          - "acme-corp"
-          - "tech-startup"
+          - "stripe"
+          - "coinbase"
+          - "notion"
+          - "rippling"
+          - "shopify"
 
   lever:
       enabled:   true 
       companies:
-          - "innovate-labs"
+          - "netflix"
+          - "scale-ai"
+          - "plaid"
   
   ashby:
       enabled:    true 
       companies:
-          - "future-ai"
+          - "anthropic"
+          - "openai"
+          - "retool"
+          - "brex"
 
   wellfound:
       enabled:    true 
