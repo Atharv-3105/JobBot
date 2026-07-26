@@ -10,6 +10,7 @@ from portals.ashby import AshbyCrawler
 from portals.wellfound import WellfoundCrawler
 from portals.remotive import RemotiveCrawler
 from portals.himalayas import HimalayasCrawler
+from portals.hackernews import HackerNewsCrawler
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,8 @@ CRAWLER_REGISTRY = {
     "ashby": AshbyCrawler,
     "wellfound": WellfoundCrawler,
     "remotive": RemotiveCrawler,
-    "himalayas": HimalayasCrawler
+    "himalayas": HimalayasCrawler,
+    "hackernews": HackerNewsCrawler,
 }
 
 def load_crawlers(config_path: str = "config/portals.yml", max_results: int = 20) -> List[BaseCrawler]:
@@ -56,7 +58,7 @@ def load_crawlers(config_path: str = "config/portals.yml", max_results: int = 20
         companies = portal_config.get("companies", [])
         
         #Wellfound does not use company slug, so we need to search globally
-        if portal_name in ["remotive", "wellfound", "himalayas"]:
+        if portal_name in ["remotive", "wellfound", "himalayas", "hackernews"]:
             crawlers.append(crawler_class(companies=[], max_results = max_results))
         else:
             if not companies:
@@ -105,4 +107,4 @@ async def search_all(crawlers: List[BaseCrawler], keyword: str, location: str = 
 
 
 
-__all__ = ["BaseCrawler", "JobListing", "GreenhouseCrawler", "LeverCrawler", "AshbyCrawler", "WellfoundCrawler","RemotiveCrawler", "HimalayasCrawler", "load_crawlers", "search_all"]
+__all__ = ["BaseCrawler", "JobListing", "GreenhouseCrawler", "LeverCrawler", "AshbyCrawler", "WellfoundCrawler","RemotiveCrawler", "HimalayasCrawler", "HackerNewsCrawler", "load_crawlers", "search_all"]

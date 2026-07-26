@@ -9,18 +9,18 @@ logger = logging.getLogger(__name__)
 ROLE_ALIASES = {
     "ml engineer": [
         "ml engineer", "machine learning engineer", "ai engineer",
-        "applied scientist", "research engineer", "applied ml"
+        "applied scientist", "research engineer", "applied ml", "machine learning"
     ],
     "backend engineer": [
         "backend engineer", "software engineer", "api engineer",
         "platform engineer", "infrastructure engineer", "sde",
-        "software development engineer"
+        "software development engineer", "backend"
     ],
     "frontend engineer": [
         "frontend engineer", "front-end engineer", "ui engineer",
-        "react engineer", "web engineer"
+        "react engineer", "web engineer", "frontend"
     ],
-    "full stack":[
+    "full stack engineer":[
         "full stack", "fullstack", "full-stack"
     ],
     "data engineer": [
