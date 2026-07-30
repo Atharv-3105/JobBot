@@ -53,7 +53,7 @@ class BaseCrawler(ABC):
             - Caps results at max_results_per_run
             - Handles its own errors gracefully (one company failing doesn't kill the run)
     """
-    def __init__(self, companies: List[str], max_results: int = 20):
+    def __init__(self, companies: List[str], max_results: int = 5):
         self.companies = companies
         self.max_results = max_results
         

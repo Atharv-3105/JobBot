@@ -67,7 +67,7 @@ class HimalayasCrawler(BaseCrawler):
                         title = title,
                         company = company,
                         url = job_url,
-                        portal = "Himalayas",
+                        portal = "himalayas",
                         jd_text = jd_text,
                         location = self._extract_location(job),
                         portal_job_id = job_id

@@ -77,7 +77,7 @@ class GreenhouseCrawler(BaseCrawler):
             jd_text = self._html_to_text(job.get("content", ""))
             job_location = self._extract_location(job)
             
-            logger.info(f"Greenhouse: MATCHED '{title}' at '{job_location}'")
+            # logger.info(f"Greenhouse: MATCHED '{title}' at '{job_location}'")
             
             #Step4: Check location filter if specified
             if location and not self._keyword_match(job_location, location):
