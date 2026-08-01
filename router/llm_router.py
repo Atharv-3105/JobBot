@@ -6,7 +6,7 @@ from enum import Enum
 from dataclasses import dataclass, field 
 from typing import Optional 
 from groq import AsyncGroq
-from google.generativeai import genai 
+import google.generativeai as genai
 import httpx 
 
 logger = logging.getLogger(__name__)
@@ -132,57 +132,61 @@ class LLMRouter:
             Automatically fails over on rate-limit or error
         
         """
-        
-        async with self._lock:
-            provider = self._get_available_provider()
-            
-            
-            if not provider:
-                #All Providers are exhausted ---- wait and retry
-                logger.warning("LLMRouter: all providers exhausted -- waiting 30s")
-                await asyncio.sleep(30)
-                return await self.complete(system_prompt, user_message, temperature, max_tokens, max_retries)
-            
-            try:
-                logger.info(f"LLMRouter: routing to {provider.name}")
+        attempts = 0
+        while attempts <= max_retries:
+            provider = None 
+            async with self._lock:
+                provider = self._get_available_provider()
+                if not provider:
+                    logger.warning(f"LLMRouter: all providers are exhausted --- waiting 30s")
                 
-                result = await self._call_provider(provider, system_prompt, user_message, temperature, max_tokens)
                 
-                async with self._lock:
-                    provider.mark_used(tokens_used = max_tokens)
-                return result 
-            
-            except Exception as e:
-                error_str = str(e).lower()
+                if not provider:
+                    await asyncio.sleep(30)
+                    attempts += 1
+                    continue
                 
-                #Check for rate-limit or rate-limit status code '429' in the error response
-                if "rate limit" in error_str or "429" in error_str:
+                try:
+                    logger.info(f"LLMRouter: routing to {provider.name}")
                     
-                    #Check if 'retry-after' is present in the error_str
-                    retry_after = 60
-                    if "retry_after" in error_str:
-                        try:
-                            retry_after = int(''.join(filter(str.isdigit, error_str[:50])))
-                        except ValueError:
-                            retry_after = 60
-
-                    async with self._lock:
-                        provider.mark_rate_limited(retry_after)
-
-                    if max_retries > 0:
-                        logger.info(f"LLMRouter: retrying with different provider")
-                        return await self.complete(system_prompt, user_message, temperature, max_tokens, max_retries - 1)
-                
-                #Error received in the response, retry
-                else:
-                    async with self._lock:
-                        provider.mark_error()
-                    logger.error(f"LLMRouter: {provider.name} error: {e}")
+                    result = await self._call_provider(provider, system_prompt, user_message, temperature, max_tokens)
                     
-                    if max_retries > 0:
-                        return await self.complete(system_prompt, user_message, temperature, max_tokens, max_retries - 1)
+                    async with self._lock:
+                        provider.mark_used(tokens_used = max_tokens)
+                    return result 
+                
+                except Exception as e:
+                    error_str = str(e).lower()
+                    
+                    #Check for rate-limit or rate-limit status code '429' in the error response
+                    if "rate limit" in error_str or "429" in error_str:
+                        
+                        #Check if 'retry-after' is present in the error_str
+                        retry_after = 60
+                        if "retry_after" in error_str:
+                            try:
+                                retry_after = int(''.join(filter(str.isdigit, error_str[:50])))
+                            except ValueError:
+                                pass
 
-            raise RuntimeError(f"LLMRouter: all retries exhausted - {e}")
+                        async with self._lock:
+                            provider.mark_rate_limited(retry_after)
+
+                        # if max_retries > 0:
+                        #     logger.info(f"LLMRouter: retrying with different provider")
+                        #     return await self.complete(system_prompt, user_message, temperature, max_tokens, max_retries - 1)
+                    
+                    #Error received in the response, retry
+                    else:
+                        async with self._lock:
+                            provider.mark_error()
+                        logger.error(f"LLMRouter: {provider.name} error: {e}")
+                    
+                    attempts += 1 
+                    if attempts > max_retries :
+                        raise RuntimeError(f"LLMRouter: all retries exhausted. Last error: {e}")
+
+        raise RuntimeError(f"LLMRouter: all retries exhausted - {e}")
     
       
     async def _call_provider(self, provider: Provider, system_prompt: str, user_message: str, temperature: float, max_tokens: int) -> str:
@@ -240,7 +244,7 @@ class LLMRouter:
         return response.text.strip()
     
     
-    async def _call_openai_compatible(self, base_url, api_key, model, systemp_prompt, user_message, temperature, max_tokens)-> str:
+    async def _call_openai_compatible(self, base_url, api_key, model, system_prompt, user_message, temperature, max_tokens)-> str:
         """ 
             Function to generate response by calling Cerebras & OpenRouter providers
         """
@@ -254,7 +258,7 @@ class LLMRouter:
                                          json = {
                                              "model": model,
                                              "messages": [
-                                                 {"role": "system", "content": systemp_prompt},
+                                                 {"role": "system", "content": system_prompt},
                                                  {"role": "user", "content": user_message},
                                              ],
                                              "temperature": temperature,
@@ -280,3 +284,5 @@ class LLMRouter:
         }
         
         
+        
+llm_router = LLMRouter()
