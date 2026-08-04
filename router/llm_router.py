@@ -6,8 +6,12 @@ from enum import Enum
 from dataclasses import dataclass, field 
 from typing import Optional 
 from groq import AsyncGroq
-import google.generativeai as genai
+from google import genai 
+from google.genai import types
 import httpx 
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -106,9 +110,7 @@ class LLMRouter:
         self._groq = AsyncGroq(api_key = os.getenv("GROQ_API_KEY"))
         
         #==========Gemini===========
-        genai.configure(api_key = os.getenv("GEMINI_API_KEY"))
-        self._gemini = genai.GenerativeModel("gemini-2.5-flash")
-        
+        self._gemini = genai.Client(api_key = os.getenv("GEMINI_API_KEY"))
         #==========Cerebras==========
         self._cerebras_base = "https://api.cerebras.ai/v1"
         
@@ -135,39 +137,41 @@ class LLMRouter:
         attempts = 0
         while attempts <= max_retries:
             provider = None 
+            
+            
             async with self._lock:
                 provider = self._get_available_provider()
                 if not provider:
                     logger.warning(f"LLMRouter: all providers are exhausted --- waiting 30s")
                 
                 
-                if not provider:
-                    await asyncio.sleep(30)
-                    attempts += 1
-                    continue
+            if not provider:
+                await asyncio.sleep(30)
+                attempts += 1
+                continue
+            
+            try:
+                logger.info(f"LLMRouter: routing to {provider.name}")
                 
-                try:
-                    logger.info(f"LLMRouter: routing to {provider.name}")
-                    
-                    result = await self._call_provider(provider, system_prompt, user_message, temperature, max_tokens)
-                    
-                    async with self._lock:
-                        provider.mark_used(tokens_used = max_tokens)
-                    return result 
+                result = await self._call_provider(provider, system_prompt, user_message, temperature, max_tokens)
                 
-                except Exception as e:
-                    error_str = str(e).lower()
+                async with self._lock:
+                    provider.mark_used(tokens_used = max_tokens)
+                return result 
+            
+            except Exception as e:
+                error_str = str(e).lower()
+                
+                #Check for rate-limit or rate-limit status code '429' in the error response
+                if "rate limit" in error_str or "429" in error_str:
                     
-                    #Check for rate-limit or rate-limit status code '429' in the error response
-                    if "rate limit" in error_str or "429" in error_str:
-                        
-                        #Check if 'retry-after' is present in the error_str
-                        retry_after = 60
-                        if "retry_after" in error_str:
-                            try:
-                                retry_after = int(''.join(filter(str.isdigit, error_str[:50])))
-                            except ValueError:
-                                pass
+                    #Check if 'retry-after' is present in the error_str
+                    retry_after = 60
+                    if "retry_after" in error_str:
+                        try:
+                            retry_after = int(''.join(filter(str.isdigit, error_str[:50])))
+                        except ValueError:
+                            pass
 
                         async with self._lock:
                             provider.mark_rate_limited(retry_after)
@@ -234,14 +238,29 @@ class LLMRouter:
         return response.choices[0].message.content.strip()
     
     
-    async def _call_gemini(self, system_prompt, user_message) -> str:
+    async def _call_gemini(self, system_prompt, user_message, temperature, max_tokens) -> str:
         """ 
             Function to generate response by calling Gemini Provider
         """
-        prompt = f"{system_prompt}\n\n{user_message}"
-        response = await asyncio.to_thread(self._gemini.generate_content, prompt)
-        
-        return response.text.strip()
+        try:
+            response = await self._gemini.aio.models.generate_content(
+                model = 'gemini-2.0-flash',
+                contents = user_message,
+                config = types.GenerateContentConfig(
+                    system_instruction = system_prompt,
+                    temperature = temperature,
+                    max_output_tokens = max_tokens
+                )
+            )
+            
+            if not response.candidates or not response.text:
+                logger.warning("Gemini returned empty/blocked response")
+                raise ValueError("gemini response blocked by safety filters")
+            
+            return response.text.strip()
+       
+        except Exception as e:
+            raise e 
     
     
     async def _call_openai_compatible(self, base_url, api_key, model, system_prompt, user_message, temperature, max_tokens)-> str:
