@@ -7,16 +7,11 @@ from typing import Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
-def check_pdflatex_installed():
-    """ 
-        Verifies pdflatex is present at startup
-    """
-    
-    try:
-        subprocess.run(["pdflatex", "--version"], capture_output=True, check=True)
-        logger.info("pdflatex is installed and ready.")
-    except FileNotFoundError:
-        raise RuntimeError("pdflatex not found!!!!")
+try:
+    subprocess.run(["pdflatex", "--version"], capture_output=True, check=True)
+    logger.info("pdflatex is installed and ready.")
+except FileNotFoundError:
+    raise RuntimeError("pdflatex not found!!!!")
     
 
 def compile_pdf(tex_content: str, output_dir: str, filename_base: str) -> Tuple[Optional[str], Optional[str]]:
@@ -24,8 +19,6 @@ def compile_pdf(tex_content: str, output_dir: str, filename_base: str) -> Tuple[
         Compiles LaTeX to PDF.
         Returns(texPath, pdf_path) or (None, None) on failure
     """
-    
-    check_pdflatex_installed()
     
     os.makedirs(output_dir, exist_ok=True)
     tex_path = os.path.join(output_dir, f"{filename_base}.tex")
@@ -66,6 +59,8 @@ def compile_pdf(tex_content: str, output_dir: str, filename_base: str) -> Tuple[
         if not os.path.exists(src_pdf):
             logger.error("pdflatex finished but no PDF was generated")
             return None, None 
+        
+        shutil.copy2(src_pdf, pdf_path)
         
     
     #Save the tailored .tex source along-with the PDF
