@@ -14,7 +14,7 @@ JOB_ID = 99
 BASE_TEX_PATH = "config/base_resume.tex" # Ensure this file exists for the test!
 JD_TEXT = """
 We are looking for a Senior ML Engineer. 
-Requirements: Python, PyTorch, LangChain, RAG, FastAPI. 
+Requirements: Python, Triton Inference Server, ONNX Runtime, Ray Serve, Kubernetes, MLflow.
 You will build scalable AI pipelines and optimize LLM inference.
 """
 

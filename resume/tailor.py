@@ -14,17 +14,32 @@ from resume.compiler import compile_pdf
 
 logger = logging.getLogger(__name__)
 
+# FIX: Stricter prompt to prevent Summary and Experience hallucination
 SYSTEM_PROMPT = r"""
-You are an expert technical resume writer and ATS optimization specialist. 
+You are an expert technical resume writer and ATS optimization specialist.
 Your task is to tailor specific sections of a candidate's LaTeX resume for a specific job.
 
 STRICT RULES:
 1. You will receive LaTeX resume sections wrapped in XML tags (e.g., <section_0>...</section_0>).
 2. You MUST return the EXACT same XML tags with the modified LaTeX inside.
 3. Do NOT output markdown fences (```). Do NOT output prose or explanations. ONLY output the XML tags.
-4. MODIFYING SUMMARY: Rewrite to mirror the job title and core requirements. Keep it under 3 sentences. Preserve LaTeX formatting commands (like \textbf, \section).
-5. MODIFYING SKILLS: Inject technical skills from the JD to beat ATS filters. Do NOT delete original skills. Do NOT invent soft skills. Preserve LaTeX formatting (like \textbf{Category:}, '\newline', etc.).
-6. MODIFYING EXPERIENCE: Rewrite 2-3 bullet points (\item) to mirror the JD's language. Do NOT delete jobs or fabricate experience.
+
+4. MODIFYING SUMMARY (CRITICAL):
+   - You MUST preserve the original facts, years of experience, and core technologies mentioned in the original summary.
+   - You may ONLY rephrase the summary to emphasize aspects that align with the JD's focus (e.g., if the JD wants "backend systems", emphasize the backend parts of the original summary).
+   - DO NOT invent new years of experience, DO NOT add core technologies that were not in the original summary, and DO NOT fabricate metrics or achievements.
+   - Keep it under 3 sentences. Preserve LaTeX formatting commands.
+
+5. MODIFYING SKILLS: 
+   - Inject technical skills from the JD to beat ATS filters. 
+   - Do NOT delete original skills. Do NOT invent soft skills. 
+   - Preserve LaTeX formatting (like \textbf{Category:}, '\newline', etc.).
+
+6. MODIFYING EXPERIENCE (CRITICAL): 
+   - You MUST preserve the original projects, companies, and core technologies mentioned in the bullet points.
+   - You may ONLY rephrase the bullet points to emphasize aspects that align with the JD.
+   - DO NOT invent new projects, DO NOT replace the original technologies with JD keywords if they were not in the original bullet, and DO NOT fabricate experience.
+   - Keep the exact same number of bullet points (\item).
 """
 
 async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, sections: list) -> Optional[str]:
@@ -61,7 +76,7 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
         raw_content = raw_content.strip().removeprefix("```latex").removesuffix("```").strip()
         
         #Fix: Basic validation; Ensure at least the first XML tag exists
-        if f"<section_0>" not in raw_content:
+        if "<section_0>" not in raw_content:
             raise ValueError("LLM did not return the required XML structure")
         
         return raw_content 
@@ -98,9 +113,9 @@ def _inject_tailored_content(original_tex: str, original_blocks: list, llm_respo
                 return None
         
         # #Verification: Post-Validation Step
-        # if not _validate_tailored_blocks(original_blocks, tailored_blocks_for_validation):
-        #     logger.error("LLM Hallucinated or Delted too much changes, Rejecting Changes")
-        #     return None
+        if not _validate_tailored_blocks(original_blocks, tailored_blocks_for_validation):
+            logger.error("LLM Hallucinated or Delted too much changes, Rejecting Changes")
+            return None
         
         #Verification: Ensure LaTeX structure is Intact
         if "\\begin{document}" not in modified_tex or "\\end{document}" not in modified_tex:
