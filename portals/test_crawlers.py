@@ -92,7 +92,7 @@ async def test_remotive():
     print("="*75)
     
     crawler = RemotiveCrawler(companies=[], max_results=5)
-    results = await crawler.search('engineer')
+    results = await crawler.search('machine learning')
     
     print(f"\n FOUND: {len(results)} matching jobs:\n")
     for i, job in enumerate(results, 1):
@@ -101,6 +101,7 @@ async def test_remotive():
         print(f"    Location: {job.location}")
         print(f"    URL:    {job.url}")
         print(f"    JD-Length: {len(job.jd_text)} chars")
+        print(f"    {job.jd_text}")
         
 async def test_himalayas():
     print("="*75)
@@ -142,7 +143,7 @@ async def test_remoteok():
     print("="*75)
     
     crawler = RemoteOkCrawler(companies = [], max_results = 5)
-    results = await crawler.search('engineer')
+    results = await crawler.search('Python ML Engineer')
     
     print(f"\n Found: {len(results)} matching jobs")
     for i, job in enumerate(results, 1):
@@ -180,7 +181,7 @@ async def test_all_crawlers():
 if __name__ == "__main__":
     # asyncio.run(test_greenhouse_only())
     
-    # asyncio.run(test_ashby())
+    asyncio.run(test_ashby())
     
     # asyncio.run(test_lever())
     
@@ -194,4 +195,4 @@ if __name__ == "__main__":
     
     # asyncio.run(test_remoteok())
     
-    asyncio.run(test_all_crawlers())
+    # asyncio.run(test_all_crawlers())

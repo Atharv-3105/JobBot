@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from typing import List, Optional
 import logging 
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -68,24 +69,53 @@ class BaseCrawler(ABC):
     
     def _keyword_match(self, text: str, keyword: str) -> bool:
         """ 
-            This function will check for case-insensitive keyword match against title + description
-            Will support Comma-separated keywords (meaning it will match ANY keyword)
+            This function will check for case-insensitive keyword match against text
+            Will support Comma-separated keywords (meaning it will match ANY keyword) OR LOGIC
+            Will support Space-separated keywords (meaning it will match ALL keywords) AND LOGIC
+            Also supports terms using ROLE_ALIASES to catch variations
         """
         if not text:
             return False 
         
         text_lower = text.lower()
+        keyword_lower = keyword.lower()
         
-        #Expand comma-separated input terms
-        input_terms = [t.strip().lower() for t in keyword.split(",") if t.strip()]
+        #1. Comma Separated Logic 
+        if "," in keyword_lower:
+            phrases = [phrase.strip() for phrase in keyword_lower.split(",") if phrase.strip()]
+            for phrase in phrases:
+                variations = self.get_variations(phrase)
+                
+                #If ANY of the expanded variations are in the text, it's A MATCH
+                if any(var in text_lower for var in variations):
+                    return True 
+            return False 
         
-        #For each input term, we collect it + it's aliases
-        all_terms = set()
-        for term in input_terms:
-            all_terms.add(term)
+        #2. Space-separated Keyword
+        #First we check whether the entire phrase (or its aliases) exists contiguously
+        variations = self.get_variations(keyword_lower)
+        if any(var in text_lower for var in variations):
+            return True 
+        
+        #Fallback AND Logic: Require all individual words to be present
+        terms = [t.strip() for t in keyword_lower.split() if t.strip()]
+        if not terms:
+            return False 
+        
+        return all(term in text_lower for term in terms)
+           
+    
+    def get_variations(self, phrase: str) -> set:
+        """ 
+            Helper function to get all variations of a phrase using ROLE_ALIASES dict
+        """
+        variations = {phrase}
+        if phrase in ROLE_ALIASES:
+            variations.update(ROLE_ALIASES[phrase])
+        else:
             for key, aliases in ROLE_ALIASES.items():
-                if term == key or term in aliases:
-                    all_terms.update(aliases)
-        
-        return any(term in text_lower for term in all_terms)
-        
+                if phrase in aliases:
+                    variations.update(aliases)
+                    break 
+                
+        return variations
