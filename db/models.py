@@ -68,7 +68,7 @@ class Job(Base):
     applications = relationship("Application", back_populates="job", cascade = "all, delete-orphan")
     
     
-    __table_args__ = (UniqueConstraint("user_id", "url", name = "uq_user_job_url"))
+    __table_args__ = (UniqueConstraint("user_id", "url", name = "uq_user_job_url"),)
     
     def __repr__(self):
         return f"<Job(id={self.id}, user_id={self.user_id}, title='{self.title}', company='{self.company}')>"

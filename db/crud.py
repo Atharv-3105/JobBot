@@ -86,14 +86,15 @@ def get_all_users(db) -> List[User]:
 
 #-----------JOB CRUD Opers----------------------
 
-def save_job(db, user_id: int, title: str, company: str, url: str, portal: str, jd_text: Optional[str] = None) -> Job:
-    
+def save_job(db, user_id: int, title: str, company: str, url: str, 
+             portal: str, jd_text: Optional[str] = None,
+             score: Optional[str] = None, score_data: Optional[dict] = None) -> Job:
     """
         Create or Update a Job Listing 
         If a Job with the same URL exists for this user, update it.
         
         Args: 
-            db session, telegram userID, Job title, Job Company, Job URL, Job portal, JD Text
+            db session, telegram userID, Job title, Job Company, Job URL, Job portal, JD , Score, Score-Data
         Returns: 
             A Job Object
     """
@@ -108,14 +109,25 @@ def save_job(db, user_id: int, title: str, company: str, url: str, portal: str, 
             job.jd_text = jd_text
         job.portal = portal
         
+        #Update score if provided
+        if score:
+            job.score = score
+            job.score_data = json.dumps(score_data) if score_data else None 
+            job.status = JobStatus.SCORED
+        
     else:
+        #Insert New Job
+        initial_status = JobStatus.SCORED if score else JobStatus.NEW 
         job = Job(
             user_id = user_id,
             title = title, 
             company = company,
             url = url,
             portal = portal,
-            jd_text = jd_text
+            jd_text = jd_text,
+            score = score,
+            score_data = json.dumps(score_data) if score_data else None,
+            status = initial_status
         )
         db.add(job)
         
