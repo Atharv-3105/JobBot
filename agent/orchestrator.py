@@ -1,5 +1,7 @@
 import logging 
 from typing import Literal
+import asyncio
+import random 
 from langgraph.graph import StateGraph, START, END 
 
 from agent.state import AgentState
@@ -82,12 +84,16 @@ async def tailor_node(state: AgentState) -> dict:
     for sj in state["scored_jobs"]:
         logger.info(f"[TAILOR] Tailoring for {sj.job.company}")
         
+        #Check to skip Jobs which don't have ID in the DB
+        if not sj.db_job_id:
+            logger.error(f"Cannot tailor job without DB ID: {sj.job.url}")
+            continue        
         tex_path, pdf_path = await tailor(base_tex_path=base_tex_path,
                                           jd_text = sj.job.jd_text,
                                           job_title = sj.job.title,
                                           company = sj.job.company,
                                           user_id = state["user_id"],
-                                          job_id = sj.job.portal_job_id)
+                                          job_id = sj.db_job_id)
         
         if pdf_path:
             tailored_results.append({
@@ -96,6 +102,11 @@ async def tailor_node(state: AgentState) -> dict:
                 "score":   sj.score,
                 "pdf_path": pdf_path
             })
+        
+        #Rate-Limits Protection, check whether there are remaining jobs to be tailored
+        if len(tailored_results) < len(state["scored_jobs"]):
+            delay = random.uniform(2.0, 4.0)
+            await asyncio.sleep(delay)
             
     
     return {

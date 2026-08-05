@@ -2,7 +2,7 @@ import os
 import re 
 import logging 
 import json 
-from typing import List, Dict, Any 
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from json_repair import repair_json 
 
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass 
 class ScoredJob:
     job: JobListing
+    db_job_id: Optional[int] = None 
     score: str  
     match_percentage: int 
     strengths: List[str]
@@ -73,6 +74,35 @@ def passess_rule_filter(job: JobListing, profile: Dict[str, Any]) -> bool:
     pattern = r"\b(" +  "|".join(escaped_skills)+ r")\b"
     return bool(re.search(pattern, jd_lower))
 
+def passes_experience_filter(job: JobListing, profile: Dict[str, Any]) -> bool:
+    """ 
+        Rule-Base filter to drop jobs with explicit seniority mismatches.
+        Saves LLM Tokens by not scoring Senior/Principal jobs for juniors, and Vice-Versa
+    """
+
+    experience_years = profile.get("experience_years", 0)
+    title_lower = job.title.lower()
+    
+    #---------Junior/Entry-Level Check-----------
+    #If the User is Senior we drop explicit Junior/Intern roles
+    if experience_years >= 5:
+        junior_keywords = r"\b(junior|jr|intern|fresher|entry.level|associate)\b"
+        if re.search(junior_keywords, title_lower):
+            logger.info(f"FILTER: Dropped '{job.title}' - Senior User, Junior Role")
+            
+    
+    #---------Senior/Experienced Check--------------
+    #If the User is Junior drop explicit Senior/Principal/Manager Roles
+    if experience_years < 3:
+        senior_keyword = r"\b(senior|sr|staff|principal|lead|manager|director|head|vp|chief)\b"
+        if re.search(senior_keyword, title_lower):
+            logger.info(f"FILTER: Dropped '{job.title}' - Junior User, Senior/Leadership Role")
+            return False 
+        
+    
+    #If no explicit mismatch found, let it pass to the LLM for deeper scoring
+    return True
+        
 
 #=========================BATCH SCORING & JSON PARSING==================================
 SYSTEM_PROMPT = """
@@ -214,7 +244,7 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
     logger.info(f"Scorer: Received {len(jobs)} jobs to evaluate")
     
     #------------- Rule based Pre-Filter------------------
-    filtered_jobs = [job for job in jobs if passess_rule_filter(job, profile)]
+    filtered_jobs = [job for job in jobs if passess_rule_filter(job, profile) and passes_experience_filter(job, profile)]
     dropped_count = len(jobs) - len(filtered_jobs)
     logger.info(f"Scorer: Rule-Based Filter dropped {dropped_count} jobs. {len(filtered_jobs)} remaining")
     
@@ -276,11 +306,13 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
                         "gaps": sj.gaps,
                         "recommendation": sj.recommendation,
                     }
-                    crud.save_job(
+                    db_job = crud.save_job(
                         db, user_id, sj.job.title, sj.job.company,
                         sj.job.url, sj.job.portal, sj.job.jd_text,
                         sj.score, score_data = score_dict
                     )
+                    
+                    sj.db_job_id = db_job.id
                 
     #Combine Cached and Newly Scored Jobs
     all_scored_jobs = cached_scored_jobs + newly_scored_jobs
