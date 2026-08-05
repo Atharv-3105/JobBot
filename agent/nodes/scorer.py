@@ -197,6 +197,8 @@ async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) 
                     recommendation = "Review manually",
                 ))
                 
+        return scored_jobs
+                
     except Exception as e:
         logger.error(f"LLM Scoring failed across all providers: {e}")
         #We return neutral scores so the Pipeline doesn't crash
@@ -268,10 +270,17 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
         if user_id:
             with get_db() as db:
                 for sj in scored_batch:
-                    db_job = crud.save_job(db, user_id, sj.job.title, sj.job.company, 
-                                           sj.job.url, sj.job.portal, sj.job.jd_text)
-                    
-                    crud.update_job_score(db, user_id, db_job.id, sj.score)
+                    score_dict = {
+                        "match_percentage": sj.match_percentage,
+                        "strengths": sj.strengths,
+                        "gaps": sj.gaps,
+                        "recommendation": sj.recommendation,
+                    }
+                    crud.save_job(
+                        db, user_id, sj.job.title, sj.job.company,
+                        sj.job.url, sj.job.portal, sj.job.jd_text,
+                        sj.score, score_data = score_dict
+                    )
                 
     #Combine Cached and Newly Scored Jobs
     all_scored_jobs = cached_scored_jobs + newly_scored_jobs

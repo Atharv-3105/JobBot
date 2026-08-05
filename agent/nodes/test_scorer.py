@@ -37,8 +37,10 @@ async def test_scorer():
     
     print(f"\nResults ({len(scored_jobs)} jobs passed A/B threshold):\n")
     for sj in scored_jobs:
-        print(f"  🏢 {sj.job.title} at {sj.job.company} | Score: {sj.score} ({sj.match_percentage}%)")
-        print(f"     Strengths: {', '.join(sj.strengths)}")
+        print(f"\n  🏢 {sj.job.title} at {sj.job.company} | Score: {sj.score} ({sj.match_percentage}%)")
+        print(f"\n     Strengths: {', '.join(sj.strengths)}")
+        print(f"\n     Gaps:            {', '.join(sj.gaps)}")
+        print(f"\n     Recommendations: {sj.recommendation}")
         print("-" * 40)
 
 if __name__ == "__main__":
