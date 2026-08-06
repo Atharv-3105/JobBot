@@ -1,16 +1,18 @@
 import logging 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from db import get_db 
+from db import get_db, save_user
 from db.models import User 
 import os 
-import json 
-
+import json
 
 logger = logging.getLogger(__name__)
 
 #Conversation States
-(NAME, ROLES, SKILLS, LOCATION, RESUME) = range(5)
+(NAME, ROLES, SKILLS_CORE, SKILLS_PRIMARY, RESUME) = range(5)
+# Hardcode all portals ON for MVP
+DEFAULT_PORTALS = ["greenhouse", "lever", "ashby", "remotive", "himalayas", "remoteok", "hackernews"]
+
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """ 
@@ -19,7 +21,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     logger.info("[BOT-Onboarding] Start Command runnimg")
     await update.message.reply_text(
         "Hello, Welcom to JobBot! Let's setup your profile. \n\n"
-        "What is  your **Name**?"
+        "What is  your **Name**?",
+        parse_mode="Markdown"
     )
     logger.info("[BOT-Onboarding] Start Command ended")
     return NAME
@@ -35,29 +38,37 @@ async def get_roles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logger.info("[BOT-Onboarding] Getting Roles")
     roles = [r.strip() for r in update.message.text.split(',')]
     context.user_data['target_roles'] = roles
-    await update.message.reply_text("Awesome, What are your **Core Skills**? (comma-separated, e.g. Python, TypeScript, Go)")
-    logger.info("[BOT-Onboarding] Got Roles")
-    return SKILLS 
-
-async def get_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    logger.info("[BOT-Onboarding] Getting Skills")
-    skills = [s.strip() for s in update.message.text.split(',')]
-    #Store as a simple dict structures matching our profile.yml format
-    context.user_data["skills"] = {"core": skills, "primary": [], "secondary": [], "basic": []}
-    await update.message.reply_text("Got it, What is your preferred **Location**? (e.g. Remote, Bengaluru, US)")
-    logger.info("[BOT-Onboarding] Got Skills")
-    return LOCATION 
-
-
-async def get_location(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    logger.info("[BOT-Onboarding] Getting Location")
-    context.user_data['location'] = update.message.text 
     await update.message.reply_text(
-        "Finally, please **upload your base_resume.tex file**. \n"
-        "Send it as a document, Ensure it is name '**base_resume.tex**'!!"
-    ) 
-    logger.info("[BOT-Onboarding] Got Location")
-    return RESUME 
+        "Now, let's add your skills. We categorize them to help our AI score jobs better.\n\n"
+        "What are your **CORE** skills? (Your daily drivers, expert level. Comma-separated, e.g., Python, Go, FastAPI)"
+    )
+    return SKILLS_CORE
+
+async def get_skills_core(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    core = [s.strip() for s in update.message.text.split(',')]
+    context.user_data.setdefault('skills', {})['core'] = core
+    await update.message.reply_text(
+        "Got it. What are your **PRIMARY** skills? (Strong proficiency, used frequently. Comma-separated, or type 'skip')"
+    )
+    return SKILLS_PRIMARY
+
+
+async def get_skills_primary(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip().lower()
+    if text == 'skip':
+        context.user_data['skills']['primary'] = []
+    else:
+        context.user_data['skills']['primary'] = [s.strip() for s in update.message.text.split(',')]
+    
+    #Default secondary and basic to empty list for faster onboarding
+    context.user_data['skills']['secondary'] = []
+    context.user_data['skills']['basic'] = []
+    
+    await update.message.reply_text(
+        "Finally, please **upload your base_resume.tex file**.\n"
+        "Send it as a document."
+    )
+    return RESUME
 
 
 async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -72,33 +83,38 @@ async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user_dir = f"data/users/{telegram_id}"
     os.makedirs(user_dir, exist_ok=True)
     
-    resume_path = os.path.join(user_dir, "base_resume.tex")
-    
     #Download the resume file
+    resume_path = os.path.join(user_dir, "base_resume.tex")
     file = await update.message.document.get_file()
     await file.download_to_drive(resume_path)
     
+    #Construct Profile Dictionary
+    profile_data = {
+        "name": context.user_data['name'],
+        "target_roles": context.user_data['target_roles'],
+        "experience_years": 1,
+        "skills": context.user_data['skills'],
+        "portals": DEFAULT_PORTALS
+    }
+    
+    #Save profile to JSON file
+    profile_path = os.path.join(user_dir, "profile.json")
+    with open(profile_path, "w", encoding = "utf-8") as f:
+        json.dump(profile_data,f, indent = 2)
+        
+    
     #Save the User to DB
     with get_db() as db:
-        user = User(
-            user_id = telegram_id,
-            username = context.user_data['name'],
-            target_roles = context.user_data['target_roles'],
-            skills = context.user_data['skills'],
-            resume_path = resume_path
-        )
+        save_user(db, telegram_id, context.user_data['name'], profile_path, resume_path)
         
-        #Merge updates if exists, inserts if new
-        db.merge(user)
-        db.commit()
         
     await update.message.reply_text(
         "**Profile Saved!**\n\n"
         "You can now use '/search <keyword> to find and tailor jobs. \n"
-        "Use `/profile` to view your current settings."
+        "Use `/profile` to view your current settings.",
+        parse_mode='Markdown'
     )
-    
-    logger.info("[BOT-Onboarding] Onboarded User")
+
     return ConversationHandler.END 
 
 
@@ -112,8 +128,8 @@ onboarding_handler = ConversationHandler(
     states = {
         NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
         ROLES: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_roles)],
-        SKILLS: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_skills)],
-        LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_location)],
+        SKILLS_CORE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_skills_core)],
+        SKILLS_PRIMARY: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_skills_primary)],
         RESUME: [MessageHandler(filters.Document.ALL, get_resume)],
     },
     fallbacks = [CommandHandler("cancel", cancel)]
