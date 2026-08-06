@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum, JSON, UniqueConstraint
 from sqlalchemy.orm import relationship, declarative_base 
 from datetime import datetime, timezone
 import enum 
@@ -28,8 +28,9 @@ class User(Base):
     
     user_id = Column(Integer, primary_key = True)
     username = Column(String(255), nullable = True)
+    target_roles = Column(JSON, default = [])
+    skills = Column(JSON, default = {})
     onboarded_at = Column(DateTime, default = lambda:datetime.now(timezone.utc))    #using lambda: so that SQLAlchemy can call it at runtime, otherwise datetime is loaded only when the module is imported and can cause bugs with current time.
-    profile_path = Column(String(512), nullable = False)    #path to profile.yml
     resume_path = Column(String(512), nullable = False)     #path to base_resume.tex
     
     #Relationships with Tables

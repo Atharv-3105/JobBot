@@ -20,7 +20,8 @@ async def crawl_node(state: AgentState) -> dict:
     logger.info(f"[CRAWLER] Starting crawl for keyword: '{state['keyword']}'")
     
     try:
-        crawlers = load_crawlers("config/portals.yml", max_results = 20)
+        portals = state["portals"]
+        crawlers = load_crawlers(portals, max_results = 20)
         jobs = await search_all(crawlers, state["keyword"], state.get("location"))
         logger.info(f"[CRAWLER] Found {len(jobs)} total raw jobs.")
         return {"raw_jobs": jobs}
@@ -44,11 +45,7 @@ async def score_node(state: AgentState) -> dict:
     
     try:
         #Load user-profile from DB or Config
-        #This will be updated to load-profile per-user
-        import yaml
-        with open("config/profile.yml", "r") as f:
-            profile = yaml.safe_load(f)
-            
+        profile = state["profile"]
         
         scored = await score_listing(state["raw_jobs"], profile, user_id = state["user_id"])
         logger.info(f"[SCORER] {len(scored)} jobs passed the A/B threshold")
@@ -77,7 +74,7 @@ async def tailor_node(state: AgentState) -> dict:
     
     #Load User's base-resume.tex path
     #This will be updated to dynamic per-user path
-    base_tex_path = "config/base_resume.tex"
+    base_tex_path = state["base_tex_path"]
     
     for sj in state["scored_jobs"]:
         logger.info(f"[TAILOR] Tailoring for {sj.job.company}")

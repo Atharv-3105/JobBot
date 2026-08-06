@@ -12,6 +12,11 @@ class AgentState(TypedDict):
     keyword: str 
     location:  Optional[str]
     
+    portals: Dict[str, Any]
+    profile: Dict[str, Any]
+    base_tex_path: str
+    
+    
     #Pipeline Data 
     raw_jobs:   List[JobListing]
     scored_jobs:    List[ScoredJob]
