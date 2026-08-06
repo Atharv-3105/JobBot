@@ -1,0 +1,32 @@
+import logging 
+from telegram import Update 
+from telegram.ext import Application, CommandHandler
+from bot.onboarding import onboarding_handler
+from bot.handlers.search import search_command, help_command
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
+
+logging.basicConfig(level = logging.INFO, format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+def main():
+    
+    #Initialize the bot with your token
+    application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
+    
+    #Register handlers
+    application.add_handler(onboarding_handler)
+    application.add_handler(CommandHandler("search", search_command))
+    application.add_handler(CommandHandler("help", help_command))
+    
+    logger.info("[BOT] Started....")
+    
+    #Run the bot until CTRL+C is pressed
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    
+
+if __name__ == "__main__":
+    main()    
