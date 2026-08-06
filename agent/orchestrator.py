@@ -7,9 +7,7 @@ from langgraph.graph import StateGraph, START, END
 from agent.state import AgentState
 from portals import load_crawlers, search_all
 from agent.nodes.scorer import score_listing
-from resume.tailor import tailor 
-from db import crud, get_db 
-from db.models import JobStatus 
+from resume.tailor import tailor  
 
 
 logger = logging.getLogger(__name__)
