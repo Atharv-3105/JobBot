@@ -111,5 +111,5 @@ class RemoteOkCrawler(BaseCrawler):
         for element in soup(["script", "style"]):
             element.decompose()
             
-        lines = [line.strip() for line in soup.get_text(separator="]n").splitlines() if line.strip()]
+        lines = [line.strip() for line in soup.get_text(separator="\n").splitlines() if line.strip()]
         return "\n".join(lines)

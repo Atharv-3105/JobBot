@@ -89,7 +89,7 @@ def passes_experience_filter(job: JobListing, profile: Dict[str, Any]) -> bool:
         junior_keywords = r"\b(junior|jr|intern|fresher|entry.level|associate)\b"
         if re.search(junior_keywords, title_lower):
             logger.info(f"FILTER: Dropped '{job.title}' - Senior User, Junior Role")
-            
+            return False
     
     #---------Senior/Experienced Check--------------
     #If the User is Junior drop explicit Senior/Principal/Manager Roles
