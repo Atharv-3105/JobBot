@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass 
 class ScoredJob:
     job: JobListing
-    db_job_id: Optional[int] = None 
+    db_job_id: Optional[int] 
     score: str  
     match_percentage: int 
     strengths: List[str]
@@ -210,6 +210,7 @@ async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) 
             if score_data:
                 scored_jobs.append(ScoredJob(
                     job = job,
+                    db_job_id=None,
                     score = score_data.get("score", "C"),
                     match_percentage = score_data.get("match_percentage", 0),
                     strengths = score_data.get("strengths", []),
@@ -220,6 +221,7 @@ async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) 
                 #Fallback if LLM missed a job in the batch
                 scored_jobs.append(ScoredJob(
                     job = job,
+                    db_job_id= None,
                     score = "C",
                     match_percentage = 50,
                     strengths = [],
