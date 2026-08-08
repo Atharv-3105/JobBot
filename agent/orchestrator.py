@@ -136,6 +136,17 @@ async def log_node(state: AgentState) -> dict:
     return {"final_report": report}
 
 
+#--------------------Router Node------------------------------
+def router_node(state: AgentState) -> dict:
+    """ 
+        Node which decides where to start the pipeline based on the 'mode'
+    """
+    
+    mode = state.get("mode", "full") #By default we take full mode
+    logger.info(f"[ROUTER] Mode set to: {mode}")
+    
+    return {}
+
 #===============EDGES==================
 def route_after_scoring(state: AgentState) -> Literal["tailor_node", "log_node"]:
     """ 
@@ -147,6 +158,19 @@ def route_after_scoring(state: AgentState) -> Literal["tailor_node", "log_node"]
 
     return "log_node"
 
+def route_after_router(state: AgentState) -> Literal["crawl_node", "score_node", "tailor_node"]:
+    """ 
+        Conditional Edge from Router
+    """
+    
+    mode = state.get("mode", "full")
+    
+    if mode == "full":
+        return "crawl_node"
+    elif mode == "score":
+        return "score_node"
+    else:
+        return "tailor_node"
 
 #============BUILD THE GRAPH=================
 def build_graph():
@@ -158,13 +182,26 @@ def build_graph():
      
     
     #Add Nodes
+    graph.add_node("router_node", router_node)
     graph.add_node("crawl_node", crawl_node)
     graph.add_node("score_node", score_node)
     graph.add_node("tailor_node", tailor_node)
     graph.add_node("log_node", log_node)
     
     #Add Edges
-    graph.add_edge(START, "crawl_node")
+    graph.add_edge(START, "router_node")
+    
+    #now router decides the entry-point of our pipeline
+    graph.add_conditional_edges(
+        "router_node",
+        route_after_router,
+        {
+            "crawl_node": "crawl_node",
+            "score_node": "score_node",
+            "tailor_node": "tailor_node"
+        }
+    )
+    
     graph.add_edge("crawl_node", "score_node")
     
     #Conditional Routing After Scoring

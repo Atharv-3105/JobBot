@@ -1,4 +1,4 @@
-from typing import TypedDict, List, Optional, Dict, Any
+from typing import TypedDict, List, Optional, Dict, Any, Literal
 from portals.base import JobListing 
 from agent.nodes.scorer import ScoredJob
 
@@ -11,11 +11,12 @@ class AgentState(TypedDict):
     user_id: int 
     keyword: str 
     location:  Optional[str]
-    
-    portals: Dict[str, Any]
+    portals: List[str]
     profile: Dict[str, Any]
     base_tex_path: str
     
+    #Control-Flow
+    mode: Literal["full", "score", "tailor"]  #full = crawl + score + tailor, 'score' = score + tailor, 'tailor' = tailor only
     
     #Pipeline Data 
     raw_jobs:   List[JobListing]
