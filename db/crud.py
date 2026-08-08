@@ -34,14 +34,15 @@ def get_db():
         
         
 #----------User CRUD opers-----------------    
-def save_user(db, user_id: int, username: Optional[str], profile_path: str, resume_path: str) -> User:
+def save_user(db, user_id: int, username: Optional[str], target_roles: list, skills: dict, resume_path: str) -> User:
     """ 
         Create or Update a User Record.
         Args:
             db: Database session
             user_id:  Telegram user ID
             username: Telegram UserName 
-            profile_path: Path to user's profile.yml
+            target_roles: Target Roles which the User-want's to target
+            skills: user's skills
             resume_path:  Path to user's base_resume.tex
     """
     
@@ -51,11 +52,12 @@ def save_user(db, user_id: int, username: Optional[str], profile_path: str, resu
     #If user exists, then update else create
     if user:
         user.username = username
-        user.profile_path = profile_path
+        user.target_roles = target_roles
+        user.skills = skills
         user.resume_path = resume_path 
     else:
         #Create a New USER
-        user = User(user_id = user_id, username = username, profile_path = profile_path, resume_path = resume_path)
+        user = User(user_id = user_id, username = username, target_roles = target_roles, skills = skills, resume_path = resume_path)
         db.add(user)
         
     
