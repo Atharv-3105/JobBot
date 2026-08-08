@@ -41,6 +41,12 @@ class HackerNewsCrawler(BaseCrawler):
                 
                 for hit in hits:
                     title = hit.get("title", "")
+                    
+                    #Check if "Show HN" and "Ask HN" posts then they are not real jobs, drop them
+                    if title.lower().startswith(("show hn:", "ask hn:")):
+                        logger.info(f"Hackernews: Dropping Post: '{title}' as it's not a job")
+                        continue
+                    
                     job_url = hit.get("url", "")
                     job_id = str(hit.get("objectID", ""))
                     
