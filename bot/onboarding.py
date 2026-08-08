@@ -88,24 +88,9 @@ async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     file = await update.message.document.get_file()
     await file.download_to_drive(resume_path)
     
-    #Construct Profile Dictionary
-    profile_data = {
-        "name": context.user_data['name'],
-        "target_roles": context.user_data['target_roles'],
-        "experience_years": 1,
-        "skills": context.user_data['skills'],
-        "portals": DEFAULT_PORTALS
-    }
-    
-    #Save profile to JSON file
-    profile_path = os.path.join(user_dir, "profile.json")
-    with open(profile_path, "w", encoding = "utf-8") as f:
-        json.dump(profile_data,f, indent = 2)
-        
-    
     #Save the User to DB
     with get_db() as db:
-        save_user(db, telegram_id, context.user_data['name'], profile_path, resume_path)
+        save_user(db, telegram_id, context.user_data['name'], context.user_data['target_roles'], context.user_data['skills'], resume_path)
         
         
     await update.message.reply_text(
