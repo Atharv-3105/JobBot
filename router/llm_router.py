@@ -15,6 +15,14 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
+#Priority of LLMs based on the task
+TASK_PROVIDER_ORDERS = {
+    "scoring": ["groq", "gemini", "cerebras", "openrouter"],
+    "tailoring": ["gemini", "groq", "cerebras", "openrouter"], 
+    "default": ["groq", "gemini", "cerebras", "openrouter"]
+    
+}
+
 class ProviderStatus(Enum):
     AVAILABLE = "available"
     RATE_LIMITED = "rate_limited"
@@ -51,9 +59,7 @@ class Provider:
         if now - self.last_reset >= 60:
             self._reset_counters()
         
-        return (
-            self.status == ProviderStatus.AVAILABLE and self.requests_this_minute <= self.rpm_limit
-        )
+        return self.status == ProviderStatus.AVAILABLE and self.requests_this_minute <= self.rpm_limit
         
     def _reset_counters(self):
         """ 
@@ -111,6 +117,7 @@ class LLMRouter:
         
         #==========Gemini===========
         self._gemini = genai.Client(api_key = os.getenv("GEMINI_API_KEY"))
+        
         #==========Cerebras==========
         self._cerebras_base = "https://api.cerebras.ai/v1"
         
@@ -118,15 +125,19 @@ class LLMRouter:
         self._openrouter_base = "https://openrouter.ai/api/v1"
         
         
-    def _get_available_provider(self) -> Optional[Provider]:
+    def _get_available_provider(self, task_type: str) -> Optional[Provider]:
         """ 
-            Function which returns the highest-priority available provider
+            Function which returns the highest-priority available provider based on the task-type
         """
+        
         available = [p for p in self.providers if p.is_available()]
         if not available:
             return None 
         
-        return min(available, key = lambda p: p.priority)
+        #Feat: Sort the available providers based on task-specific order
+        order = TASK_PROVIDER_ORDERS.get(task_type, TASK_PROVIDER_ORDERS["default"])
+        available.sort(key = lambda p: order.index(p.name) if p.name in order else 99)
+        return available[0]
     
     async def complete(self, system_prompt: str, user_message: str, temperature: float = 0.1, max_tokens: int = 500, max_retries: int = 3)-> str:
         """ 
