@@ -10,6 +10,7 @@ from agent.orchestrator import pipeline
 from portals.base import JobListing
 from agent.nodes.scorer import ScoredJob
 from utils.jd_extractor import process_job_input
+from bot.worker import job_queue, BotTask
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +111,15 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "error": None
     }
     
-    await update.message.reply_text("Scoring Job and tailoring resume....")
-    asyncio.create_task(_run_controlled_pipeline(update.effective_chat.id, initial_state, context))
+    #----Acknowledge Immediately------------
+    await update.message.reply_text("**Job received!**\n\n I've added this to my background queue.I will message you here with scored report and tailored PDF as soon as it's ready(usually 30-60 seconds).")
+    
+    #------ Create and Push the Task to the Worker Queue----------
+    task = BotTask(chat_id = update.effective_chat.id, user_id = telegram_id,
+                   task_type= "scoring", initial_state = initial_state, bot = context.bot)
+    
+    await job_queue.put(task)
+    
 
     
 async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -152,6 +160,15 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "error":  None
     }
     
-    await update.message.reply_text("✂️ Tailoring resume directly....")
-    asyncio.create_task(_run_controlled_pipeline(update.effective_chat.id, initial_state, context))
-        
+    #------Acknowledge the request immediately---------
+    await update.message.reply_text("🪄 **Tailoring request received!**\n\n Added to task-queue. I will send your custom PDF here shortly.")
+    
+    #-------create and push the task to the Worker-Queue
+    task = BotTask(
+        chat_id = update.effective_chat.id,
+        user_id = telegram_id,
+        task_type = "tailoring",
+        initial_state = initial_state,
+        bot = context.bot,
+    )
+    await job_queue.put(task)
