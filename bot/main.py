@@ -30,8 +30,12 @@ def main():
     logger.info("[BOT] Starting background worker and polling....")
     
     #Start the worker task alongside the bot
+    NUM_WORKERS = 2
     loop = asyncio.get_event_loop()
-    loop.create_task(start_worker())
+    #Added 2 Concurrent workers so that if one-waits other can execute the task's without being blocked
+    for i in range(NUM_WORKERS):
+        loop.create_task(start_worker(worker_id= i + 1))
+    
     
     #Run the bot until CTRL+C is pressed
     application.run_polling(allowed_updates=Update.ALL_TYPES)
