@@ -183,7 +183,7 @@ async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) 
             system_prompt= SYSTEM_PROMPT,
             user_message = user_message,
             temperature = 0.1,
-            max_tokens=2000
+            max_tokens=2000, task_type = "scoring"
         )
         
         #Fix-the response for accurate JSON

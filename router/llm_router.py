@@ -139,7 +139,7 @@ class LLMRouter:
         available.sort(key = lambda p: order.index(p.name) if p.name in order else 99)
         return available[0]
     
-    async def complete(self, system_prompt: str, user_message: str, temperature: float = 0.1, max_tokens: int = 500, max_retries: int = 3)-> str:
+    async def complete(self, system_prompt: str, user_message: str, temperature: float = 0.1, max_tokens: int = 500, max_retries: int = 3, task_type: str = "default")-> str:
         """ 
             Function which sends a Completion Request, routing to the best available provider,
             Automatically fails over on rate-limit or error
@@ -151,7 +151,7 @@ class LLMRouter:
             
             
             async with self._lock:
-                provider = self._get_available_provider()
+                provider = self._get_available_provider(task_type)
                 if not provider:
                     logger.warning(f"LLMRouter: all providers are exhausted --- waiting 30s")
                 
