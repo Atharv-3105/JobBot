@@ -69,7 +69,7 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
         #Call LLMROuter for JSON output, Note: Use high tokens limit
         raw_content = await llm_router.complete(
             system_prompt=SYSTEM_PROMPT, user_message = USER_MESSAGE,
-            temperature = 0.2, max_tokens = 1500
+            temperature = 0.2, max_tokens = 1500, task_type = "tailoring"
         )
         
         #Strip the markdown symbols if LLM ignored the instructions
