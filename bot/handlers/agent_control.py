@@ -14,29 +14,6 @@ from bot.worker import job_queue, BotTask
 
 logger = logging.getLogger(__name__)
 
-async def _run_controlled_pipeline(chat_id: int, initial_state: dict, context: ContextTypes.DEFAULT_TYPE):
-    """ 
-        Task Runner for Controlled pipelines
-    """
-    try:
-        
-        final_state = await pipeline.ainvoke(initial_state)
-        
-        await context.bot.send_message(chat_id = chat_id, text = final_state["final_report"], parse_mode = 'Markdown')
-        
-        if final_state.get("tailored_jobs"):
-            for job in final_state["tailored_jobs"]:
-                
-                pdf_path = job["pdf_path"]
-                caption = f"**{job['title']}** at {job['company']} (Score: {job['score']})"
-                with open(pdf_path, "rb") as pdf_file:
-                    await context.bot.send_document(chat_id = chat_id, document = pdf_file, file_name = f"{job['company']}_resume.pdf",
-                                                    caption = caption, parse_mode = 'Markdown')
-    
-    except Exception as e:
-        logger.error(f"Controlled pipeline failed: {e}")
-        await context.bot.send_message(chat_id = chat_id, text = f"Error: {str(e)}")
-
       
 async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE, user_input: str):
     """ 
@@ -75,7 +52,8 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
         db_job = save_job(db, telegram_id, title, company, unique_url, "manual", jd_text)
         dummy_job.portal_job_id = str(db_job.id)  
         
-    return user, profile, dummy_job
+    #We return unique_url so that tailor can get the Job from db correctly
+    return user, profile, dummy_job, unique_url
 
         
 
@@ -134,14 +112,14 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = " ".join(context.args)
     telegram_id = update.effective_user.id 
     
-    user, profile, dummy_job = await _prepare_manual_job(update, context, user_input)
+    user, profile, dummy_job, unique_url = await _prepare_manual_job(update, context, user_input)
     
     if not dummy_job:
         return 
     
     #-------Get the real DB ID for the job----------
     with get_db() as db:
-        db_job = get_job_by_url(db, telegram_id, "direct_input") 
+        db_job = get_job_by_url(db, telegram_id, unique_url) 
         job_id = db_job.id if db_job else None 
         
     dummy_scored = ScoredJob(job = dummy_job, db_job_id = job_id, score = "A", match_percentage = 100, strengths = ["Direct Input"], gaps = [], recommendation = "Tailor immediately")
