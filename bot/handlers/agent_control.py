@@ -68,7 +68,7 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_input = " ".join(context.args)
     telegram_id = update.effective_user.id
-    user, profile, dummy_job = await _prepare_manual_job(update, context, user_input)
+    user, profile, dummy_job, _ = await _prepare_manual_job(update, context, user_input)
     
     if not dummy_job:
         logger.info(f"[SCORE CMD] failed due to no dummy_job")

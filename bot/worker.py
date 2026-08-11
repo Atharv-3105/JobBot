@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 #we define a Dataclass which holds the details about our bot's state
 @dataclass 
 class BotTask:
-    chat_id: str 
-    user_id: str 
+    chat_id: int  
+    user_id: int 
     task_type: str 
     initial_state: dict 
-    bot: Bot 
+    bot: Bot
     
 #We use an Aysncio Queue as our WorkerQueue
 job_queue = asyncio.Queue()
@@ -51,7 +51,7 @@ async def _send_result(task: BotTask, final_state: dict):
             pdf_path = job["pdf_path"]
             caption = f"**{job['title']}** at {job['company']} (Score: {job['score']})"
             with open(pdf_path, "rb") as pdf_file:
-                await task.bot.send_document(chat_id = task.chat_id, document = pdf_file, filename = f"{[job['company']]}_resume.pdf",
+                await task.bot.send_document(chat_id = task.chat_id, document = pdf_file, filename = f"{job['company']}_resume.pdf",
                                              caption = caption, parse_mode='Markdown')
                 
     else:
