@@ -176,23 +176,6 @@ def update_job_status(db, user_id: int, job_id: int, status: JobStatus) -> Optio
     return job 
 
 
-def update_job_score(db, user_id:int, job_id: int, score: str, score_data: Optional[dict] = None) -> Optional[Job]:
-    """
-        This function updates the score of a Job for a specific user
-        Args: DB_Session, UserID, JobID, Score, ScoreData
-        Returns: Updated Job Object or None if not found
-    """
-    
-    job = get_job_by_id(db, user_id, job_id)
-    if job:
-        job.score = score 
-        job.score_data = json.dumps(score_data) if score_data else None
-        job.status = JobStatus.SCORED
-        db.commit()
-        db.refresh(job)
-    
-    return job 
-
 def get_jobs_by_status(db, user_id: int, status: JobStatus) -> List[Job]:
     """  
         This function GET all the Jobs for a specific status for a User

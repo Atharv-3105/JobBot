@@ -95,6 +95,10 @@ async def tailor_node(state: AgentState) -> dict:
                 "company": sj.job.company,
                 "title":   sj.job.title,
                 "score":   sj.score,
+                "match_percentage": sj.match_percentage,
+                "strengths": sj.strengths[:4] if sj.strengths else [],
+                "gaps": sj.gaps[:4] if sj.gaps else [],
+                "recommendation": sj.recommendation,
                 "pdf_path": pdf_path
             })
         
@@ -113,25 +117,39 @@ async def log_node(state: AgentState) -> dict:
     """ 
         Node which runs LOGGER AGENT to format the final report for the end-user
     """
+    
     logger.info("[LOGG] Generating final report.....")
     
-    report = f" **Search Complete For: '{state['keyword']}'**\n\n"
+    report = f" 🎯 **Search Complete For: '{state['keyword']}'**\n\n"
 
     if state.get("error"):
-        report += f"    **Error:** {state['error']}\n" 
+        report += f"⚠️**Error:** {state['error']}\n" 
         
-    report += f" **State:**\n"
+    report += f"📊**Pipeline Stats:**\n"
     report += f"- Crawled:  {len(state.get('raw_jobs', []))} jobs\n"
-    report += f"- Scored A/B: {len(state.get('scored_jobs', []))} jobs\n" 
-    report += f"- Tailored Pdfs for: {len(state.get('tailored_jobs', []))} jobs\n\n"
+    report += f"- Scored (A/B): {len(state.get('scored_jobs', []))} jobs\n" 
+    report += f"- Tailored PDFs for: {len(state.get('tailored_jobs', []))} jobs\n\n"
     
     if state.get("tailored_jobs"):
-        report += "**Ready to Apply: **\n"
+        report += "✅ **Ready to Apply: **\n"
         for job in state["tailored_jobs"]:
-            report += f"• **{job['title']}** at {job['company']} (Score: {job['score']})\n"
-            report += f"  PDF: `{job['pdf_path']}`\n\n"
+            report += f"🔹 **{job['title']}** at {job['company']}\n"
+            report += f"🏆 Score: **{job['score']}** | Match: **{job.get('match_percentage', 0)}%**\n"
+            
+            strengths = job.get("strengths", [])
+            gaps = job.get("gaps", [])
+            if strengths:
+                report += f"   💪 Strengths: {', '.join(strengths)}\n"
+            if gaps:
+                report += f"   ⚠️ Gaps: {', '.join(gaps)}\n"
+                
+            rec = job.get("recommendation", "")
+            if rec:
+                report += f"   💡 *{rec}*\n"
+                
+            report += f"   📄 PDF: `{job['pdf_path']}`\n\n"
     else:
-        report += "No jobs scored high enough (A/B) to tailor resumes for.\n" 
+        report += "❌ No jobs scored high enough (A/B) to tailor resumes for.\n" 
         
     return {"final_report": report}
 
