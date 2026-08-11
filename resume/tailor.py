@@ -82,7 +82,7 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
         return raw_content 
     
     except Exception as e:
-        logger.error(f"LLM Tailoring failed or validation failed: {e}. Falling back to original resume.")
+        logger.error(f"[TAILOR] LLM Tailoring failed or validation failed: {e}. Falling back to original resume.")
         return None
     
     
@@ -109,12 +109,12 @@ def _inject_tailored_content(original_tex: str, original_blocks: list, llm_respo
                 #We will use .replace(original, new, 1) to only replace the first occurence safely
                 modified_tex = modified_tex.replace(original_block, tailored_block, 1)
             else:
-                logger.warning(f"XML tag <section_{i}> missing from LLM response: Skippin injection for this block.")
+                logger.warning(f"[TAILOR] XML tag <section_{i}> missing from LLM response: Skippin injection for this block.")
                 return None
         
         # #Verification: Post-Validation Step
         if not _validate_tailored_blocks(original_blocks, tailored_blocks_for_validation):
-            logger.error("LLM Hallucinated or Delted too much changes, Rejecting Changes")
+            logger.error("[TAILOR] LLM Hallucinated or Delted too much changes, Rejecting Changes")
             return None
         
         #Verification: Ensure LaTeX structure is Intact
@@ -123,7 +123,7 @@ def _inject_tailored_content(original_tex: str, original_blocks: list, llm_respo
         
         return modified_tex
     except Exception as e:
-        logger.error(f"Surgical injection failed: {e}. Falling back to original resume.")
+        logger.error(f"[TAILOR] Surgical injection failed: {e}. Falling back to original resume.")
         return None 
     
 
@@ -139,7 +139,7 @@ async def tailor(base_tex_path: str,
         Returns: {Tex_path, Pdf_path} on Success, (None, None) on failure.
     """
     
-    logger.info(f"Starting resume tailoring for Job {job_id} ({company}) for User {user_id}")
+    logger.info(f"[TAILOR] Starting resume tailoring for Job {job_id} ({company}) for User {user_id}")
     
     try:
         #Read the Base-Resume
@@ -152,14 +152,14 @@ async def tailor(base_tex_path: str,
         
         #Fix: If tailorable_blocks missing, Return None,None
         if not tailorable_blocks:
-            logger.warning("Could not extract tailorable sections. Returning Original")
+            logger.warning("[TAILOR] Could not extract tailorable sections. Returning Original")
             return None, None 
         
         
         #---------Phase 2:-  LLM Tailoring
         llm_response = await _call_llm_for_tailoring(job_title, company, jd_text, tailorable_blocks)
         if not llm_response:
-            logger.warning("LLM response missing.")
+            logger.warning("[TAILOR] LLM response missing.")
             return None, None    #Fallback to original resume is handled inside the function
         
         
@@ -180,13 +180,13 @@ async def tailor(base_tex_path: str,
         #Phase 5:- Update the DB
         with get_db() as db:
             crud.update_job_status(db,user_id, job_id, JobStatus.TAILORED)
-            logger.info(f"DB Updated. Job {job_id} marked as TAILORED")
+            logger.info(f"[TAILOR] DB Updated. Job {job_id} marked as TAILORED")
             
         
         return tex_path, pdf_path 
     
     except Exception as e:
-        logger.error(f"Fatal error in tailor pipeline: {e}")
+        logger.error(f"[TAILOR] Fatal error in tailor pipeline: {e}")
         return None, None
             
                 
@@ -215,7 +215,7 @@ def _validate_tailored_blocks(original_blocks: list, tailored_blocks: list) -> b
             retention_rate = len(orig_words.intersection(tail_words)) / len(orig_words)
             
             if retention_rate < 0.6:
-                logger.warning(f"Validation failed: Retention Rate {retention_rate:.2f} is too low")
+                logger.warning(f"[TAILOR] Validation failed: Retention Rate {retention_rate:.2f} is too low")
                 return False 
             
     return True 
