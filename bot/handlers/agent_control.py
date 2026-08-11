@@ -89,14 +89,22 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "error": None
     }
     
-    #----Acknowledge Immediately------------
-    await update.message.reply_text("**Job received!**\n\n I've added this to my background queue.I will message you here with scored report and tailored PDF as soon as it's ready(usually 30-60 seconds).")
-    
-    #------ Create and Push the Task to the Worker Queue----------
+    #------ Create the Task for the Worker Queue----------
     task = BotTask(chat_id = update.effective_chat.id, user_id = telegram_id,
                    task_type= "scoring", initial_state = initial_state, bot = context.bot)
     
-    await job_queue.put(task)
+    #-----Check for duplicate------------
+    if job_queue.is_duplicate(task.task_id):
+        await update.message.reply_text(f"⚠️ You already have a scoring task for '{dummy_job.title}' in progress.\n\nPlease wait for it to complete")
+        return 
+    
+    
+    added = await job_queue.put(task)
+    
+    if added:
+        await update.message.reply_text("**Job received!**\n\n I have added this to my background queue. I will message you here with scored report and tailored PDF as soon as it's ready(usually 30-60 seconds)")
+    else:
+        await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.")
     
 
     
@@ -138,9 +146,6 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "error":  None
     }
     
-    #------Acknowledge the request immediately---------
-    await update.message.reply_text("🪄 **Tailoring request received!**\n\n Added to task-queue. I will send your custom PDF here shortly.")
-    
     #-------create and push the task to the Worker-Queue
     task = BotTask(
         chat_id = update.effective_chat.id,
@@ -149,4 +154,16 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         initial_state = initial_state,
         bot = context.bot,
     )
-    await job_queue.put(task)
+    
+    #-----Check for duplicate--------------
+    if job_queue.is_duplicate(task.task_id):
+        await update.message.reply_text(f"⚠️ You already have a tailoring task for '{dummy_job.title}' in progres\n\n Please wait for it to copmlete")
+        return 
+    
+    #-----Addded---------
+    added = await job_queue.put(task)
+    
+    if added:
+        await update.message.reply_text("✂️ **Tailoring request received!**\n\nAdded to task-queue. I will send your custom PDF here shortly.")
+    else:
+        await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.")

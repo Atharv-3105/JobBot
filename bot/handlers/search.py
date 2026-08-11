@@ -51,10 +51,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "error": None
     }
     
-    #Acknowledge immediately and push to the task-Queue
-    await update.message.reply_text(f"🔍 **Search received for '{keyword}'!**\n\n""I've added this to my background queue. I will message you here with scored jobs and tailored PDFs as soon as it's ready (usually 1-2 minutes).",parse_mode='Markdown')
-    
-    #Create and push the Task to the Worker Queue
+    #Create the Task for the Worker Queue
     task = BotTask(
         chat_id = update.effective_chat.id,
         user_id = telegram_id,
@@ -63,7 +60,18 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bot = context.bot
     )
     
-    await job_queue.put(task)
+    #Check for Duplicate
+    if job_queue.is_duplicate(task.task_id):
+        await update.message.reply_text(f"⚠️ You already have a search for '{keyword}' in progress.\n\nPlease wait for it to complete before starting another one.")
+        return 
+    
+    #Add the task to queue
+    added = await job_queue.put(task)
+    
+    if added:
+        await update.message.reply_text(f"🔍 **Search received for '{keyword}'!**\n\nI've added this to my background queue. I will message you here with scored jobs and tailored PDFs as soon as it's ready (usually 1-2 minutes).", parse_mode='Markdown')
+    else:
+        await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.")
     
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
