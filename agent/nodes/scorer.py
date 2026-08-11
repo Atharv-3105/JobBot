@@ -232,7 +232,7 @@ async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) 
         return scored_jobs
                 
     except Exception as e:
-        logger.error(f"LLM Scoring failed across all providers: {e}")
+        logger.error(f"[SCORER] LLM Scoring failed across all providers: {e}")
         #We return neutral scores so the Pipeline doesn't crash
         return [ScoredJob(job = j, score = "C", match_percentage=50, strengths = [], gaps = [str(e)], recommendation="Error") for j in jobs]
     
@@ -243,12 +243,12 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
         Supports Caching By Job-URL, Tailor Only A/B Scores
     """
     
-    logger.info(f"Scorer: Received {len(jobs)} jobs to evaluate")
+    logger.info(f"[SCORER]: Received {len(jobs)} jobs to evaluate")
     
     #------------- Rule based Pre-Filter------------------
     filtered_jobs = [job for job in jobs if passess_rule_filter(job, profile) and passes_experience_filter(job, profile)]
     dropped_count = len(jobs) - len(filtered_jobs)
-    logger.info(f"Scorer: Rule-Based Filter dropped {dropped_count} jobs. {len(filtered_jobs)} remaining")
+    logger.info(f"[SCORER]: Rule-Based Filter dropped {dropped_count} jobs. {len(filtered_jobs)} remaining")
     
     #check if filtered_jobs is None
     if not filtered_jobs:
@@ -268,6 +268,7 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
                 if db_job and db_job.score:
                     cached_scored_jobs.append(ScoredJob(
                         job = job,
+                        db_job_id = db_job.id,
                         score = db_job.score,
                         match_percentage = 0,
                         strengths = [],
@@ -282,7 +283,7 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
     else:
         jobs_to_score = filtered_jobs
         
-    logger.info(f"Scorer: cache hit for {len(cached_scored_jobs)} jobs. {len(jobs_to_score)} need LLM Scoring")
+    logger.info(f"[SCORER]: cache hit for {len(cached_scored_jobs)} jobs. {len(jobs_to_score)} need LLM Scoring")
     
     if not jobs_to_score:
         return []
@@ -320,7 +321,7 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
     all_scored_jobs = cached_scored_jobs + newly_scored_jobs
     
     final_jobs = [sj for sj in all_scored_jobs if sj.score in ["A", "B"]]
-    logger.info(f"Scorer: {len(final_jobs)} jobs scored A or B and will proceed to tailoring.")
+    logger.info(f"[SCORER]: {len(final_jobs)} jobs scored A or B and will proceed to tailoring.")
     
     return final_jobs
             
