@@ -68,7 +68,7 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_input = " ".join(context.args)
     telegram_id = update.effective_user.id
-    user, profile, dummy_job, _ = await _prepare_manual_job(update, context, user_input)
+    user, profile, dummy_job, unique_url = await _prepare_manual_job(update, context, user_input)
     
     if not dummy_job:
         logger.info(f"[SCORE CMD] failed due to no dummy_job")
@@ -91,7 +91,7 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     #------ Create the Task for the Worker Queue----------
     task = BotTask(chat_id = update.effective_chat.id, user_id = telegram_id,
-                   task_type= "scoring", initial_state = initial_state, bot = context.bot)
+                   task_type= "scoring", initial_state = initial_state, bot = context.bot, dedup_key=f"{telegram_id}:manual:{unique_url}")
     
     #-----Check for duplicate------------
     if job_queue.is_duplicate(task.task_id):
@@ -153,6 +153,7 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task_type = "tailoring",
         initial_state = initial_state,
         bot = context.bot,
+        dedup_key = f"{telegram_id}:manual:{unique_url}"
     )
     
     #-----Check for duplicate--------------

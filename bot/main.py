@@ -62,7 +62,7 @@ async def post_init(application: Application):
 def main():
     
     #Initialize the bot with your token
-    application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).build()
+    application = Application.builder().token(os.getenv("TELEGRAM_BOT_TOKEN")).post_init(post_init).post_stop(post_shutdown).build()
     
     #Register handlers
     application.add_handler(onboarding_handler)
