@@ -37,7 +37,7 @@ async def test_pipeline():
         "profile": MOCK_PROFILE,
         "portals": MOCK_PORTALS,
         "base_tex_path": "config/base_resume.tex",
-        "mode": "score",
+        "mode": "full",
         "raw_jobs": [],
         "scored_jobs": [],
         "tailored_jobs": [],
@@ -61,7 +61,7 @@ async def test_score_only():
     print("="*60)
     
     #We must inject a raw-job because we are skipping the crawler
-    mock_jd ="We are looking for a Senior ML Engineer. Requirements: Python, PyTorch, LangChain, RAG, FastAPI."
+    mock_jd ="We are looking for a ML Engineer. Requirements: Python, PyTorch, LangChain, RAG, FastAPI."
     dummy_job = JobListing(
         title = "ML Engineer",
         company = "AI startup",
@@ -143,5 +143,5 @@ async def test_tailor_only():
 
 if __name__ == "__main__":
     # asyncio.run(test_pipeline())
-    # asyncio.run(test_score_only())
-    asyncio.run(test_tailor_only())
+    asyncio.run(test_score_only())
+    # asyncio.run(test_tailor_only())
