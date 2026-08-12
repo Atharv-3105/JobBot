@@ -6,6 +6,7 @@ from telegram.ext import Application, CommandHandler
 from bot.onboarding import onboarding_handler
 from bot.handlers.search import search_command, help_command
 from bot.handlers.agent_control import score_command, tailor_command
+from bot.handlers.stats import stats_command
 from bot.worker import start_worker, job_queue
 from dotenv import load_dotenv
 import os
@@ -70,6 +71,7 @@ def main():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("score", score_command))
     application.add_handler(CommandHandler("tailor", tailor_command))
+    application.add_handler(CommandHandler("stats", stats_command))
     
     logger.info("[BOT] Starting polling....")
     
