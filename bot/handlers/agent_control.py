@@ -1,5 +1,6 @@
 import asyncio 
 import logging 
+import hashlib
 from telegram import Update 
 import uuid
 from telegram.ext import ContextTypes
@@ -23,10 +24,13 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     with get_db() as db:
         user = get_user(db, telegram_id)
+        
+        #If User not present in DB
         if not user:
-            await update.message.reply_text("couldn't find you in my records. Please run `/start` first.")
+            await update.message.reply_text(" ⚠️ Couldn't find you in my records. Please run `/start` first.")
             return None, None, None
         
+        #Build the user-profile dict
         profile = {
             "name": user.username,
             "target_roles": user.target_roles,
@@ -35,16 +39,16 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
             "location": "Remote"
         }
             
-    await update.message.reply_text("Analyzing input....")
+    await update.message.reply_text("🔍 Analyzing input....")
     title, company, jd_text, error = await process_job_input(user_input)
     
     if error:
         await update.message.reply_text(error, parse_mode='Markdown')
-        return None, None, None 
+        return None, None, None, None
+    
     
     #Having a unique url is important so we replicate this by using UUID
     unique_url = f"manual_{uuid.uuid4().hex[:8]}"
-    
     dummy_job = JobListing(title = title, company = company, url = unique_url, portal = "manual", portal_job_id="manual_01")
     
     #Save the job to DB so it gets an integer ID for the tailor node
@@ -68,8 +72,10 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_input = " ".join(context.args)
     telegram_id = update.effective_user.id
+    
     user, profile, dummy_job, unique_url = await _prepare_manual_job(update, context, user_input)
     
+    #IF Job couldn't be created by manual_job_creation function
     if not dummy_job:
         logger.info(f"[SCORE CMD] failed due to no dummy_job")
         return 
@@ -79,7 +85,7 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "user_id": telegram_id,
         "keyword": dummy_job.title,
         "profile": profile,
-        "portals": "config/portals.yml",
+        "portals": [],
         "base_tex_path": user.resume_path,
         "mode": "score",
         "raw_jobs": [dummy_job],
@@ -89,20 +95,27 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "error": None
     }
     
-    #------ Create the Task for the Worker Queue----------
-    task = BotTask(chat_id = update.effective_chat.id, user_id = telegram_id,
-                   task_type= "scoring", initial_state = initial_state, bot = context.bot, dedup_key=f"{telegram_id}:manual:{unique_url}")
+    #Build the Dedup key from UserID + JOBURL
+    dedup_key = hashlib.md5(f"{telegram_id}:scoring:{unique_url}".encode()).hexdigest()
     
     #-----Check for duplicate------------
     if job_queue.is_duplicate(task.task_id):
-        await update.message.reply_text(f"⚠️ You already have a scoring task for '{dummy_job.title}' in progress.\n\nPlease wait for it to complete")
+        await update.message.reply_text(f"⚠️ You already have a scoring task in progess.\n\n Use `/cancel` to stop it, or wait for it to finish.")                     
         return 
     
+    #------ Create the Task for the Worker Queue----------
+    task = BotTask(chat_id = update.effective_chat.id, user_id = telegram_id,
+                   task_type= "scoring", initial_state = initial_state, bot = context.bot, dedup_key= dedup_key)
     
+
     added = await job_queue.put(task)
     
     if added:
-        await update.message.reply_text("**Job received!**\n\n I have added this to my background queue. I will message you here with scored report and tailored PDF as soon as it's ready(usually 30-60 seconds)")
+        await update.message.reply_text(
+            "✅ **Job received!**\n\n"
+            "Added to background queue. I'll message you with the scored report and tailored PDF shortly (usually 30-60s).\n\n"
+            "Use `/cancel` to stop this task."
+        )
     else:
         await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.")
     
@@ -136,7 +149,7 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "user_id": telegram_id,
         "keyword": dummy_job.title, 
         "profile": profile,
-        "portals": "config/portals.yml",
+        "portals": [],
         "base_tex_path": user.resume_path,
         "mode": "tailor",
         "raw_jobs": [dummy_job],
@@ -146,6 +159,15 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "error":  None
     }
     
+    #Build the DEDUP_KEY
+    dedup_key = hashlib.md5(f"{telegram_id}:tailoring:{unique_url}".encode()).hexdigest()
+    
+    if job_queue.is_duplicate(dedup_key):
+        await update.message.reply_text(
+            f"⚠️ You already have a tailoring task in progress.\n\nUse `/cancel` to stop it, or wait for it to finish."
+        )
+        return
+    
     #-------create and push the task to the Worker-Queue
     task = BotTask(
         chat_id = update.effective_chat.id,
@@ -153,13 +175,9 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         task_type = "tailoring",
         initial_state = initial_state,
         bot = context.bot,
-        dedup_key = f"{telegram_id}:manual:{unique_url}"
+        dedup_key = dedup_key
     )
     
-    #-----Check for duplicate--------------
-    if job_queue.is_duplicate(task.task_id):
-        await update.message.reply_text(f"⚠️ You already have a tailoring task for '{dummy_job.title}' in progres\n\n Please wait for it to copmlete")
-        return 
     
     #-----Addded---------
     added = await job_queue.put(task)
