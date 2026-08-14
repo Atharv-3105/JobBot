@@ -1,7 +1,7 @@
 import logging 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
-from db import get_db, save_user
+from db import get_db, save_user, get_user
 from db.models import User 
 import os 
 import json
@@ -18,9 +18,23 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     """ 
         Starts the onboarding wizard.
     """
+    telegram_id = update.effective_user.id 
     logger.info("[BOT-Onboarding] Start Command runnimg")
+    
+    #Check if user is already present
+    with get_db() as db:
+        existing_user = get_user(db, telegram_id)
+        if existing_user:
+            await update.message.reply_text(
+                "You already have a profile set up!\n\n"
+                "Use `/profile` to view it, or `/search <keyword>` find jobs. \n\n"
+                "To update your profile, use `/update_profile` (coming_soon)",
+                parse_mode = 'Markdown'
+            )
+            return ConversationHandler.END
+        
     await update.message.reply_text(
-        "Hello, Welcom to JobBot! Let's setup your profile. \n\n"
+        "Hello, Welcome to JobBot! Let's setup your profile. \n\n"
         "What is  your **Name**?",
         parse_mode="Markdown"
     )
