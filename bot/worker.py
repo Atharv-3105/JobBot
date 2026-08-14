@@ -4,7 +4,7 @@ import hashlib
 import time
 import os 
 from dataclasses import dataclass, field 
-from typing import Any , Dict
+from typing import Any , Dict, Set
 from telegram import Bot
 from telegram.error import TelegramError
 from agent.orchestrator import pipeline 
@@ -22,6 +22,7 @@ class BotTask:
     bot: Bot
     dedup_key: str = field(default="")    #Unique identifier for deduplication
     created_at: float = field(default_factory=time.time)
+    cancel_event: asyncio.Event = field(default_factory = asyncio.Event)
     
     def __post_init__(self):
         """ 
@@ -30,18 +31,27 @@ class BotTask:
         if not self.dedup_key:
             #For search: Create hash from user_id + task_type + keyword 
             #For score/tailor: Create hash from user_id + task_type + job_url
-            job_url = self.initial_state.get('raw_jobs', [{}])[0].get('url', '')
-            hash_input = f"{self.user_id}:{self.task_type}:{job_url or self.initial_state.get('keyword', '')}"
+            raw_jobs = self.initial_state.get("raw_jobs", [])
+            url = raw_jobs[0].url if raw_jobs else self.initial_state.get("keyword", "unknown")
+            hash_input = f"{self.user_id}:{self.task_type}:{url}"
             self.dedup_key = hashlib.md5(hash_input.encode()).hexdigest()
     
     
 class TaskQueue:
     """ 
-        We define our own task-queue with deduplication support
+        Thread-Safe TaskQueue with:
+        - Deduplication (by user+task_type+URL)
+        - Per-user cancellation support
+        - Maxsize bounds
+        - Stale Task Cleanup (10 min TTL)
+        - Queue metrics logging
     """
+    
     def __init__(self, maxsize: int = 20):
         self._queue = asyncio.Queue(maxsize=maxsize)
-        self._active_tasks: Dict[str, float] = {}       #It will have task_id --> timestamp
+        self._active_tasks: Dict[str, float] = {}       #It will have dedup_key --> timestamp
+        self._user_active_tasks: Dict[int, Set[str]] = {}       #user_id -> set of dedup_keys
+        self._running_tasks: Dict[str, BotTask] = {}            #dedup_key -> BotTask (for cancellation)
         self._lock = asyncio.Lock()
         self._shutdown_event = asyncio.Event()
         self._maxsize = maxsize
@@ -49,8 +59,8 @@ class TaskQueue:
     
     async def put(self, task: BotTask) -> bool:
         """ 
-            Function which ADDS tasks to queue if not duplicate
-            Returns True if added, False if duplicate
+            Function which ADDS tasks to queue
+            Returns False if dulicate or queue full
         """
         async with self._lock:
             #Remove Stale task cleanup (remove tasks which are older than 10 minutes from the Queue)
@@ -58,17 +68,31 @@ class TaskQueue:
             stale_tasks = [tid for tid, ts in self._active_tasks.items() if now - ts > 600]
             for tid in stale_tasks:
                 logger.warning(f"[QUEUE] Removing stale task: {tid}")
-                del self._active_tasks[tid]
-            
-            
+                self._active_tasks.pop(tid, None)
+                
+                #Clean-up User Mapping
+                for user_tasks in self._user_active_tasks.values():
+                    user_tasks.discard(tid)
+                    
+    
+            #Deduplication Check         
             if task.dedup_key in self._active_tasks:
-                logger.info(f"[QUEUE] Duplicate task detected:(dedup_key: {task.dedup_key})")
+                logger.info(f"[QUEUE] Duplicate task rejected:({task.dedup_key})")
                 return False 
             
+            #Size Check
+            if self._queue.full():
+                logger.error(f"[QUEUE] Queue full ({self._maxsize}). Rejecting task")
+                return False
+            
             self._active_tasks[task.dedup_key] = time.time()
+            self._user_active_tasks.setdefault(task.user_id, set()).add(task.dedup_key)
             await self._queue.put(task)
             
-            logger.info(f"[QUEUE] Task {task.dedup_key} Added | Queue size: {self._queue.qsize()}/{self._maxsize} | Active: {len(self._active_tasks)}")
+            logger.info(
+                f"[QUEUE] Task queued | user={task.user_id} | type={task.task_type} | "
+                f"queue={self._queue.qsize()}/{self._maxsize} | active={len(self._active_tasks)}"
+            )
             return True 
         
     async def get(self) -> BotTask:
@@ -77,12 +101,69 @@ class TaskQueue:
         """
         return await self._queue.get()
     
+    async def mark_processing(self, task:BotTask):
+        """ 
+            Function to mark task as currently being processed (for cancellation support)
+        """
+        self._running_tasks[task.dedup_key] = task 
+    
     async def task_done(self, dedup_key: str):
         """ 
-            Mark task as completed and remove from active set
+            Mark task as completed and cleanup all tracking dicts.
         """
         self._active_tasks.pop(dedup_key, None)
+        self._running_tasks.pop(dedup_key, None)
+        
+        #Find and remove the task from the User-Mapping
+        for user_tasks in self._user_active_tasks.values():
+            user_tasks.discard(dedup_key)
+        
         self._queue.task_done()
+        
+    def is_duplicate(self, dedup_key: str) -> bool:
+        """ 
+            Function to check if a task with this dedup_key is already active
+        """
+        return dedup_key in self._active_tasks
+    
+    def has_user_active_task(self, user_id: int) -> bool:
+        """ 
+            Function to Check if a user has any active tasks.
+        """
+        return bool(self._user_active_tasks.get(user_id))
+    
+    def get_user_active_count(self, user_id: int) -> bool:
+        """ 
+            Function to Get Count of the active tasks for a user
+        """
+        return len(self._user_active_tasks.get(user_id, set()))
+    
+    async def cancel_user_tasks(self, user_id: int) -> int:
+        """ 
+            Cancel all acitve tasks for a user
+            Returns the number of tasks cancelled.
+        """ 
+        
+        cancelled = 0
+        async with self._lock:
+            user_keys = list(self._user_active_tasks.get(user_id, set()))
+            for key in user_keys:
+                #Signal cancellation via the task's event
+                if key in self._running_tasks:
+                    self._running_tasks[key].cancel_event.set()
+                    cancelled += 1
+                    logger.info(f"[QUEUE] Cancelled running task for user {user_id}")
+                else:
+                    #If the task is queued but not running we remove it from the Queue
+                    #We mark the task as stale in the queue as removing from a Asynchronous Queue is complex and will be added in FUTURE
+                    self._active_tasks.pop(key, None)
+                    cancelled += 1
+                    logger.info(f"[QUEUE] Removed queued task for user {user_id}: {key}")
+                    
+            
+            self._user_active_tasks.pop(user_id, None)
+
+        return cancelled
     
     def signal_shutdown(self):
         """  
@@ -107,13 +188,23 @@ class TaskQueue:
         except asyncio.TimeoutError:
             logger.warning(f"[QUEUE] Shutdown timeout: {self._queue.qsize()} tasks still pending")
             return False     
+        
+    
+    @property
+    def qsize(self) -> int:
+        return self._queue.qsize()
+    
+    @property
+    def active_count(self) -> int:
+        return len(self._active_tasks)
+
  
 #We use our TaskQueue as our WorkerQueue
 job_queue = TaskQueue(maxsize = 20)
 
 async def start_worker(worker_id: int):
     """ 
-        Function which starts the background workers loop with graceful shutdown
+        Function which starts the background workers loop with graceful shutdown and cancellation support.
     """
     
     logger.info(f"[QUEUE] Worker_{worker_id} Started.")
@@ -126,12 +217,28 @@ async def start_worker(worker_id: int):
             except asyncio.TimeoutError:
                 continue 
             
+            #Check if the task is already cancelled before starting
+            if task.cancel_event.is_set():
+                logger.info(f"[QUEUE] Worker_{worker_id} | Task {task.dedup_key} cancelled before start")
+                job_queue.task_done(task.dedup_key)
+                continue 
+            
+            
             try:
+                #Mark the task as processing 
+                job_queue.mark_processing(task)
                 logger.info(f"[QUEUE] Worker{worker_id} | Processing {task.task_type} task | User {task.user_id} | Key: {task.dedup_key}")
+                
                 #Process the task 
                 final_state = await pipeline.ainvoke(task.initial_state)
                 
-                await _send_result(task, final_state)
+                #Check if the task was cancelled during processing
+                if task.cancel_event.is_set():
+                    logger.info(f"[QUEUE] Task {task.dedup_key} cancelled after processing. Not sending results.")
+                    await task.bot.send_message(chat_id = task.chat_id, text = "🛑 Your task was cancelled.")
+                    
+                else:
+                    await _send_result(task, final_state)
             
             except asyncio.CancelledError:
                 #Handles CancelledError cleanly without getting race conditions
@@ -145,7 +252,7 @@ async def start_worker(worker_id: int):
                 try:
                     await task.bot.send_message(chat_id = task.chat_id, text = f"⚠️ Processing failed: {str(e)[:100]}\n\nPlease try again in a minute.")
                 except TelegramError as notify_err:
-                    logger.error(f"[QUEUE] Failed to notify user: {notify_err}")
+                    logger.error(f"[QUEUE] Failed to notify user {task.user_id}: {notify_err}")
             
             finally:
                 #Always mark task as done to prevent queue deadlockkkkk
