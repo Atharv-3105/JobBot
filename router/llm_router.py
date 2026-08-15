@@ -184,24 +184,28 @@ class LLMRouter:
                         except ValueError:
                             pass
 
-                        async with self._lock:
-                            provider.mark_rate_limited(retry_after)
-
+                    async with self._lock:
+                        provider.mark_rate_limited(retry_after)
+                    logger.warning(f"[LLMRouter]: {provider.name} rate-limited, retry_after = {retry_after}s")
                         # if max_retries > 0:
                         #     logger.info(f"LLMRouter: retrying with different provider")
                         #     return await self.complete(system_prompt, user_message, temperature, max_tokens, max_retries - 1)
-                    
-                    #Error received in the response, retry
-                    else:
-                        async with self._lock:
-                            provider.mark_error()
-                        logger.error(f"LLMRouter: {provider.name} error: {e}")
-                    
-                    attempts += 1 
-                    if attempts > max_retries :
-                        raise RuntimeError(f"LLMRouter: all retries exhausted. Last error: {e}")
+                 
+                   
+                #Error received in the response, retry
+                else:
+                    #Non-rate limit error (TypeError, valueError, network error etc)
+                    #Mark PROVIDER as ERROR so it won't be selected again
+                    async with self._lock:
+                        provider.mark_error()
+                    logger.error(f"[LLMRouter]: {provider.name} error: {e}")
+                
+                attempts += 1 
+                if attempts > max_retries :
+                    raise RuntimeError(f"LLMRouter: all retries exhausted. Last error: {e}")
 
-        raise RuntimeError(f"LLMRouter: all retries exhausted - {e}")
+                #Add small delay before retry to prevent CPU-spped spinning 
+                await asyncio.sleep(1.0)
     
       
     async def _call_provider(self, provider: Provider, system_prompt: str, user_message: str, temperature: float, max_tokens: int) -> str:
@@ -213,7 +217,7 @@ class LLMRouter:
             return await self._call_groq(system_prompt, user_message, temperature, max_tokens)
         
         elif provider.name == "gemini":
-            return await self._call_gemini(system_prompt, user_message)
+            return await self._call_gemini(system_prompt, user_message, temperature, max_tokens)
         
         elif provider.name == "cerebras":
             return await self._call_openai_compatible(
@@ -255,7 +259,7 @@ class LLMRouter:
         """
         try:
             response = await self._gemini.aio.models.generate_content(
-                model = 'gemini-2.0-flash',
+                model = 'gemini-2.5-flash',
                 contents = user_message,
                 config = types.GenerateContentConfig(
                     system_instruction = system_prompt,

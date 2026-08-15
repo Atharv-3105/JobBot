@@ -279,17 +279,22 @@ def get_user_stats(db, user_id: int) -> dict:
         RETURNS: Dict with user stats
     """
     #Query to count Job by status
-    query = select(Job.status, func.count(Job.id)).where(Job.user_id == user_id).group_by(Job.status)
-    job_counts = {str(status.value): count for status, count in db.execute(query).all()}
+    query_status = select(Job.status, func.count(Job.id)).where(Job.user_id == user_id).group_by(Job.status)
+    status_counts = {str(status.value): count for status, count in db.execute(query_status).all()}
+    
+    #Query to count Job by LLM Scores (A, B, C, D, F)
+    query_score = select(Job.score, func.count(Job.id)).where(Job.user_id == user_id, Job.score.isnot(None)).group_by(Job.score)
+    score_counts = {str(score): count for score, count in db.execute(query_score).all()}
     
     #Count total applications
-    query = select(func.count(Application.id)).where(Application.user_id == user_id)
-    total_applications = db.execute(query).scalar()
+    query_apps = select(func.count(Application.id)).where(Application.user_id == user_id)
+    total_applications = db.execute(query_apps).scalar()
     
     return {
         "user_id": user_id,
-        "total_jobs": sum(job_counts.values()),
-        "jobs_by_status": job_counts,
+        "total_jobs": sum(status_counts.values()),
+        "jobs_by_status": status_counts,
+        "jobs_by_scores": score_counts,
         "total_applications":total_applications
     }
     
