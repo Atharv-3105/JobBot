@@ -107,7 +107,7 @@ class TaskQueue:
         """
         self._running_tasks[task.dedup_key] = task 
     
-    async def task_done(self, dedup_key: str):
+    def task_done(self, dedup_key: str):
         """ 
             Mark task as completed and cleanup all tracking dicts.
         """
@@ -235,7 +235,7 @@ async def start_worker(worker_id: int):
                 #Check if the task was cancelled during processing
                 if task.cancel_event.is_set():
                     logger.info(f"[QUEUE] Task {task.dedup_key} cancelled after processing. Not sending results.")
-                    await task.bot.send_message(chat_id = task.chat_id, text = "🛑 Your task was cancelled.")
+                    await task.bot.send_message(chat_id = task.chat_id, text = "🛑 Your task was cancelled.", parse_mode='Markdown')
                     
                 else:
                     await _send_result(task, final_state)
@@ -250,7 +250,7 @@ async def start_worker(worker_id: int):
                 
                 #Notify the User of the failure
                 try:
-                    await task.bot.send_message(chat_id = task.chat_id, text = f"⚠️ Processing failed: {str(e)[:100]}\n\nPlease try again in a minute.")
+                    await task.bot.send_message(chat_id = task.chat_id, text = f"⚠️ Processing failed: {str(e)[:100]}\n\nPlease try again in a minute.", parse_mode = 'Markdown')
                 except TelegramError as notify_err:
                     logger.error(f"[QUEUE] Failed to notify user {task.user_id}: {notify_err}")
             
@@ -293,7 +293,7 @@ async def _send_result(task: BotTask, final_state: dict):
             #File existence check 
             if not os.path.exists(pdf_path):
                 logger.error(f"[QUEUE] PDF file not found at {pdf_path} for user {task.user_id}")
-                await task.bot.send_message(chat_id=task.chat_id, text = f" ⚠️ Error: The tailored PDF for {job['company']} could not be generated.")
+                await task.bot.send_message(chat_id=task.chat_id, text = f" ⚠️ Error: The tailored PDF for {job['company']} could not be generated.", parse_mode = 'Markdown')
                 continue
             
             try:
@@ -307,5 +307,5 @@ async def _send_result(task: BotTask, final_state: dict):
                 logger.error(f"[QUEUE] Unexpected error sending PDF {pdf_path} : {e}")
                 
     else:
-        await task.bot.send_message(chat_id = task.chat_id, text = "No jobs scored high enough (A/B) to tailor resumes for.")
+        await task.bot.send_message(chat_id = task.chat_id, text = "No jobs scored high enough (A/B) to tailor resumes for.", parse_mode = 'Markdown')
                 

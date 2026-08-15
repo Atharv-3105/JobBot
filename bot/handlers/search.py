@@ -24,7 +24,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = get_user(db, telegram_id)
         if not user:
             logger.error(f"[SEARCH-BOT] user {telegram_id} does not exist in the DB")
-            await update.message.reply_text("⚠️ You haven't set up your profile yet. Please run `/start` first.")
+            await update.message.reply_text("⚠️ You haven't set up your profile yet. Please run `/start` first.", parse_mode = 'Markdown')
             return
         
     #Build profile dict directly from the DB JSON columns
@@ -79,7 +79,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if added:
         await update.message.reply_text(f"🔍 **Search received for '{keyword}'!**\n\nI've added this to my background queue. I will message you here with scored jobs and tailored PDFs as soon as it's ready (usually 1-2 minutes).", parse_mode='Markdown')
     else:
-        await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.")
+        await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.", parse_mode = 'Markdown')
     
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
       await update.message.reply_text(

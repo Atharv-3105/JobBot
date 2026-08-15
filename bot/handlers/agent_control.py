@@ -27,7 +27,7 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         #If User not present in DB
         if not user:
-            await update.message.reply_text(" ⚠️ Couldn't find you in my records. Please run `/start` first.")
+            await update.message.reply_text(" ⚠️ Couldn't find you in my records. Please run `/start` first.", parse_mode = 'Markdown')
             return None, None, None
         
         #Build the user-profile dict
@@ -39,7 +39,7 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
             "location": "Remote"
         }
             
-    await update.message.reply_text("🔍 Analyzing input....")
+    await update.message.reply_text("🔍 Analyzing input....", parse_mode = 'Markdown')
     title, company, jd_text, error = await process_job_input(user_input)
     
     if error:
@@ -100,7 +100,7 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     #-----Check for duplicate------------
     if job_queue.is_duplicate(task.task_id):
-        await update.message.reply_text(f"⚠️ You already have a scoring task in progess.\n\n Use `/cancel` to stop it, or wait for it to finish.")                     
+        await update.message.reply_text(f"⚠️ You already have a scoring task in progess.\n\n Use `/cancel` to stop it, or wait for it to finish.", parse_mode = 'Markdown')                     
         return 
     
     #------ Create the Task for the Worker Queue----------
@@ -114,10 +114,11 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "✅ **Job received!**\n\n"
             "Added to background queue. I'll message you with the scored report and tailored PDF shortly (usually 30-60s).\n\n"
-            "Use `/cancel` to stop this task."
+            "Use `/cancel` to stop this task.",
+            parse_mode = 'Markdown'
         )
     else:
-        await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.")
+        await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.", parse_mode = 'Markdown')
     
 
     
@@ -163,9 +164,7 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     dedup_key = hashlib.md5(f"{telegram_id}:tailoring:{unique_url}".encode()).hexdigest()
     
     if job_queue.is_duplicate(dedup_key):
-        await update.message.reply_text(
-            f"⚠️ You already have a tailoring task in progress.\n\nUse `/cancel` to stop it, or wait for it to finish."
-        )
+        await update.message.reply_text(f"⚠️ You already have a tailoring task in progress.\n\nUse `/cancel` to stop it, or wait for it to finish.", parse_mode = 'Markdown')
         return
     
     #-------create and push the task to the Worker-Queue
@@ -183,6 +182,6 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     added = await job_queue.put(task)
     
     if added:
-        await update.message.reply_text("✂️ **Tailoring request received!**\n\nAdded to task-queue. I will send your custom PDF here shortly.")
+        await update.message.reply_text("✂️ **Tailoring request received!**\n\nAdded to task-queue. I will send your custom PDF here shortly.", parse_mode = 'Markdown')
     else:
-        await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.")
+        await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.", parse_mode = 'Markdown')

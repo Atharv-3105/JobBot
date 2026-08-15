@@ -25,26 +25,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     with get_db() as db:
         existing_user = get_user(db, telegram_id)
         if existing_user:
-            await update.message.reply_text(
-                "You already have a profile set up!\n\n"
-                "Use `/profile` to view it, or `/search <keyword>` find jobs. \n\n"
-                "To update your profile, use `/update_profile` (coming_soon)",
-                parse_mode = 'Markdown'
-            )
+            logger.info(f"[DEBUG] You already have a profile set up. Use `/profile` to view it, or `/search <keyword>` find jobs. \n\n To update your profile, use `/update_profile` (coming_soon)")
+            await update.message.reply_text("You already have a profile set up. Use `/profile` to view it, or `/search <keyword>` find jobs. \n\n To update your profile, use `/update` (coming soon)", parse_mode='Markdown')
             return ConversationHandler.END
-        
-    await update.message.reply_text(
-        "Hello, Welcome to JobBot! Let's setup your profile. \n\n"
-        "What is  your **Name**?",
-        parse_mode="Markdown"
-    )
+    
+    logger.info(f"[DEBUG] You already have Hello, Welcome to JobBot! Let's setup your profile.\n\nWhat is  your **Name**?")
+    await update.message.reply_text("Hello, Welcome to JobBot! Let's setup your profile.\n\nWhat is  your **Name**?",parse_mode="Markdown")
     logger.info("[BOT-Onboarding] Start Command ended")
     return NAME
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logger.info("[BOT-Onboarding] Getting Name")
     context.user_data['name'] = update.message.text 
-    await update.message.reply_text("Great! What are your **Target Roles**? (comma-separated, e.g., Backend Engineer, ML Engineer)")
+    logger.info("[DEBUG] Great! What are your **Target Roles**? (comma-separated, e.g., Backend Engineer, ML Engineer)")
+    await update.message.reply_text("Great! What are your **Target Roles**? (comma-separated, e.g., Backend Engineer, ML Engineer)", parse_mode='Markdown')
     logger.info("[BOT-Onboarding] Got Name")
     return ROLES 
 
@@ -52,18 +46,15 @@ async def get_roles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logger.info("[BOT-Onboarding] Getting Roles")
     roles = [r.strip() for r in update.message.text.split(',')]
     context.user_data['target_roles'] = roles
-    await update.message.reply_text(
-        "Now, let's add your skills. We categorize them to help our AI score jobs better.\n\n"
-        "What are your **CORE** skills? (Your daily drivers, expert level. Comma-separated, e.g., Python, Go, FastAPI)"
-    )
+    logger.info("[DEBUG] 3")
+    await update.message.reply_text("Now, let's add your skills. We categorize them to help our AI score jobs better.\n\nWhat are your **CORE** skills? (Your daily drivers, expert level. Comma-separated, e.g., Python, Go, FastAPI)", parse_mode='Markdown')
     return SKILLS_CORE
 
 async def get_skills_core(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     core = [s.strip() for s in update.message.text.split(',')]
     context.user_data.setdefault('skills', {})['core'] = core
-    await update.message.reply_text(
-        "Got it. What are your **PRIMARY** skills? (Strong proficiency, used frequently. Comma-separated, or type 'skip')"
-    )
+    logger.info("[DEBUG] 4")
+    await update.message.reply_text("Got it. What are your **PRIMARY** skills? (Strong proficiency, used frequently. Comma-separated, or type 'skip')", parse_mode='Markdown')
     return SKILLS_PRIMARY
 
 
@@ -78,10 +69,8 @@ async def get_skills_primary(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['skills']['secondary'] = []
     context.user_data['skills']['basic'] = []
     
-    await update.message.reply_text(
-        "Finally, please **upload your base_resume.tex file**.\n"
-        "Send it as a document."
-    )
+    logger.info("[DEBUG] 5")
+    await update.message.reply_text("Finally, please **upload your base_resume.tex file**.\nSend it as a document.", parse_mode='Markdown')
     return RESUME
 
 
@@ -90,7 +79,8 @@ async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logger.info("[BOT-Onboarding] Onboarding User")
     #Check if the updated file is .tex or not 
     if not update.message.document or not update.message.document.file_name.endswith('.tex'):
-        await update.message.reply_text("That's not a .tex file, Please upload your LaTeX resume.")
+        logger.info("[DEBUG] 6")
+        await update.message.reply_text("That's not a .tex file, Please upload your LaTeX resume.", parse_mode='Markdown')
         return RESUME 
     
     telegram_id = update.effective_user.id
@@ -106,10 +96,10 @@ async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     with get_db() as db:
         save_user(db, telegram_id, context.user_data['name'], context.user_data['target_roles'], context.user_data['skills'], resume_path)
         
-        
+    logger.info("[DEBUG] 6")
     await update.message.reply_text(
         "**Profile Saved!**\n\n"
-        "You can now use '/search <keyword> to find and tailor jobs. \n"
+        "You can now use `/search <keyword>` to find and tailor jobs. \n"
         "Use `/profile` to view your current settings.",
         parse_mode='Markdown'
     )
@@ -118,6 +108,7 @@ async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    logger.info("[DEBUG] 7")
     await update.message.reply_text("Onboarding Cancelled..")
     return ConversationHandler.END 
 

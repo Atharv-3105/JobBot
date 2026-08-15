@@ -23,7 +23,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     total_jobs = stats.get("total_jobs", 0)
     status_counts = stats.get("jobs_by_status", {})
-    score_counts = stats.get("jobs_by_score", {})
+    score_counts = stats.get("jobs_by_scores", {})
     total_apps = stats.get("total_applications", 0)
     
     #Calculate A/B scored jobs from status or score counts
