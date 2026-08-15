@@ -266,14 +266,26 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
                 
                 #Cache-Hit, job is present in the DB
                 if db_job and db_job.score:
+                    logger.info(f"[SCORER]: Cache hit for {db_job.title}")
+                    
+                    #Parse the cached score_data JSON
+                    score_data = {}
+                    
+                    if db_job.score_data:
+                        try:
+                            score_data = json.loads(db_job.score_data)
+                        except:
+                            score_data = {}
+                    
+                    #Critical FIX: Create ScoredJOB AND append to all_scored_jobs
                     cached_scored_jobs.append(ScoredJob(
                         job = job,
                         db_job_id = db_job.id,
                         score = db_job.score,
-                        match_percentage = 0,
-                        strengths = [],
-                        gaps = [],
-                        recommendation = "Cached"
+                        match_percentage = score_data.get("match_percentage", 0),
+                        strengths = score_data.get("strengths", []),
+                        gaps = score_data.get("gaps", []),
+                        recommendation = score_data.get("recommendation", "")
                     ))
                     
                 else:
@@ -285,7 +297,7 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
         
     logger.info(f"[SCORER]: cache hit for {len(cached_scored_jobs)} jobs. {len(jobs_to_score)} need LLM Scoring")
     
-    if not jobs_to_score:
+    if not jobs_to_score and not cached_scored_jobs:
         return []
     
     #-------------Batch Scoring for efficient llm calling---------------
