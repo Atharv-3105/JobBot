@@ -69,12 +69,11 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
         #Call LLMROuter for JSON output, Note: Use high tokens limit
         raw_content = await llm_router.complete(
             system_prompt=SYSTEM_PROMPT, user_message = USER_MESSAGE,
-            temperature = 0.2, max_tokens = 1500, task_type = "tailoring"
+            temperature = 0.2, max_tokens = 3000, task_type = "tailoring"
         )
         
         #Strip the markdown symbols if LLM ignored the instructions
         raw_content = raw_content.strip().removeprefix("```latex").removesuffix("```").strip()
-        
         #Fix: Basic validation; Ensure at least the first XML tag exists
         if "<section_0>" not in raw_content:
             raise ValueError("LLM did not return the required XML structure")
@@ -95,7 +94,6 @@ def _inject_tailored_content(original_tex: str, original_blocks: list, llm_respo
     try:
         modified_tex = original_tex 
         tailored_blocks_for_validation = []
-        
         for i, original_block in enumerate(original_blocks):
             #Extract the tailored block from the LLM's XML response
             tag_regex = re.compile(rf"<section_{i}>\s*(.*?)\s*</section_{i}>", re.DOTALL)
