@@ -101,4 +101,18 @@ class Application(Base):
     
     
     
+class RateLimit(Base):
+    """ 
+        This tracks Command usage per user to enforce rate-limits
+    """
+    
+    __tablename__ = "rate_limits"
+    
+    user_id = Column(Integer, primary_key=True, index = True)
+    command = Column(String(50), primary_key = True, index = True)  #command used i.e '/search', '/score', '/tailor'
+    count   = Column(Integer, default = 0)
+    reset_time = Column(DateTime, nullable = False, default = lambda: datetime.now(timezone.utc))
+    
+    def __repr__(self):
+        return f"<RateLimit(user_id={self.user_id}), command={self.command}, count={self.count}>"
     

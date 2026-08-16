@@ -5,8 +5,17 @@ from typing import Optional, List
 import os 
 import json
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone 
 
-from db.models import Base, User, Job, Application, JobStatus
+from db.models import Base, User, Job, Application, JobStatus, RateLimit
+
+
+RATE_LIMITS = {
+    "search_full": (1, 86400),  #1 per day
+    "search_quick": (1, 3600),  #1 per hour
+    "score":        (3, 86400), #3 per day
+    "tailor":       (3, 86400), #3 per day
+}
 
 #Setup the DB connection
 DATABASE_URL = "sqlite:///./data/job_bot.db"
@@ -309,4 +318,78 @@ def count_users(db) -> int:
     
         
     
+#-------------------------Rate Limit-----------------------
+def check_rate_limit(db, user_id: int, command: str) -> tuple[bool, datetime]:
+    """ 
+        Checks if user can execute command, If yes: increments count and returns [True, reset_time]
+        If no, returns [False, reset_time]
+    """
     
+    if command not in RATE_LIMITS:
+        return True, datetime.now(timezone.utc)
+    
+    max_count, duration_sec = RATE_LIMITS[command]
+    now = datetime.now(timezone.utc)
+    
+    query = select(RateLimit).where(RateLimit.user_id == user_id, RateLimit.command == command)
+    limit_record = db.execute(query).scalar_one_or_none()
+    
+    # CASE 1: No record exists — create one
+    if not limit_record:
+        limit_record = RateLimit(
+            user_id=user_id,
+            command=command,
+            count=1,
+            reset_time=now + timedelta(seconds=duration_sec)
+        )
+        db.add(limit_record)
+        db.commit()
+        return True, limit_record.reset_time
+    
+    # CASE 2: Record exists — normalize (SQLite strips tzinfo) then compare
+    reset_time = normalize_dt(limit_record.reset_time)
+    
+    if now >= reset_time:
+        # Reset period passed — reset counter
+        limit_record.count = 1
+        limit_record.reset_time = now + timedelta(seconds=duration_sec)
+        db.commit()
+        return True, limit_record.reset_time
+    
+    # CASE 3: Within window — check if limit reached
+    if limit_record.count >= max_count:
+        return False, reset_time  # Return normalized reset_time for display
+    
+    # CASE 4: Within window and under limit — increment
+    limit_record.count += 1
+    db.commit()
+    return True, reset_time
+
+def format_cooldown(reset_time: datetime) -> str:
+    """ 
+        Formats the remaining cooldown time into a human-readable string
+    """
+    now = datetime.now(timezone.utc)
+    reset_time = normalize_dt(reset_time)
+    
+    remaining = reset_time - now 
+    
+    if remaining.total_seconds() <= 0:
+        return "0 minutes"
+    
+    hours = int(remaining.total_seconds() // 3600)
+    minutes = int((remaining.total_seconds() % 3600) // 60)
+    
+    if hours > 0:
+        return f"{hours}h {minutes}m"
+    
+    return f"{minutes}m"
+    
+def normalize_dt(dt: datetime) -> datetime:
+    """ 
+        Ensure datetime is timezone-aware
+    """
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo = timezone.utc)
+
+    return dt 
