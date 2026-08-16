@@ -187,7 +187,26 @@ class TaskQueue:
             return True 
         except asyncio.TimeoutError:
             logger.warning(f"[QUEUE] Shutdown timeout: {self._queue.qsize()} tasks still pending")
-            return False     
+            return False   
+        
+    
+    def get_info(self, user_id: int) -> dict:
+        """ 
+            Returns queue position info for a specific user
+        """  
+        
+        #Count number of tasks that are ahead of this user
+        position = self._queue.qsize() + 1
+        
+        #We estimate near around 45 seconds per task
+        estimated_seconds = position * 45
+        
+        return {
+            "position": position,
+            "estimated_seconds": estimated_seconds,
+            "estimated_str": f"~{estimated_seconds}s" if estimated_seconds < 60 else f"~{estimated_seconds // 60}m {estimated_seconds}s",
+            "active_workers": len(self._running_tasks)
+        }
         
     
     @property
@@ -298,7 +317,7 @@ async def _send_result(task: BotTask, final_state: dict):
             
             try:
                 with open(pdf_path, "rb") as pdf_file:
-                    await task.bot.send_message(chat_id = task.chat_id, document = pdf_file, filename = f"{job['company']}_resume.pdf", caption = caption, parse_mode = "Markdown")
+                    await task.bot.send_document(chat_id = task.chat_id, document = pdf_file, filename = f"{job['company']}_resume.pdf", caption = caption)
             
             except TelegramError as e:
                 logger.error(f"[QUEUE] Failed to send PDF {pdf_path} to user {task.user_id} : {e}")
