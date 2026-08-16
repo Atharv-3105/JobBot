@@ -29,7 +29,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
             await update.message.reply_text("You already have a profile set up. Use `/profile` to view it, or `/search <keyword>` find jobs. \n\n To update your profile, use `/update` (coming soon)", parse_mode='Markdown')
             return ConversationHandler.END
     
-    logger.info(f"[DEBUG] You already have Hello, Welcome to JobBot! Let's setup your profile.\n\nWhat is  your **Name**?")
+    # logger.info(f"[DEBUG] You already have Hello, Welcome to JobBot! Let's setup your profile.\n\nWhat is  your **Name**?")
     await update.message.reply_text("Hello, Welcome to JobBot! Let's setup your profile.\n\nWhat is  your **Name**?",parse_mode="Markdown")
     logger.info("[BOT-Onboarding] Start Command ended")
     return NAME
@@ -70,7 +70,7 @@ async def get_skills_primary(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['skills']['basic'] = []
     
     logger.info("[DEBUG] 5")
-    await update.message.reply_text("Finally, please **upload your base_resume.tex file**.\nSend it as a document.", parse_mode='Markdown')
+    await update.message.reply_text("Finally, please upload your base_resume.tex file.\nSend it as a document.")
     return RESUME
 
 
@@ -80,7 +80,7 @@ async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     #Check if the updated file is .tex or not 
     if not update.message.document or not update.message.document.file_name.endswith('.tex'):
         logger.info("[DEBUG] 6")
-        await update.message.reply_text("That's not a .tex file, Please upload your LaTeX resume.", parse_mode='Markdown')
+        await update.message.reply_text("That's not a .tex file, Please upload your LaTeX resume.")
         return RESUME 
     
     telegram_id = update.effective_user.id

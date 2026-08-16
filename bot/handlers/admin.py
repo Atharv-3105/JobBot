@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-ADMIN_USER_ID = os.getenv("ADMIN_ID")
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID"))
 
 async def admin_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ 
@@ -22,6 +22,7 @@ async def admin_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     """
     
     if update.effective_user.id != ADMIN_USER_ID:
+        logger.info(f"[DEBUG]Effective User ID: [{update.effective_user.id}] [{type(update.effective_user.id)}]|| ADMIN_ID : [{ADMIN_USER_ID}] [{type(ADMIN_USER_ID)}]")
         await update.message.reply_text("Access Denied. Admin only")
         return 
     
@@ -32,12 +33,12 @@ async def admin_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         #Jobs by status
         status_query = select(Job.status, func.count(Job.id)).group_by(Job.status)
-        status_counts = {str(status.values): count for status, count in db.execute(status_query).all()}
+        status_counts = {str(status.value): count for status, count in db.execute(status_query).all()}
         
         
     #LLMRouter Stats
     router_status = llm_router.get_status()
-    router_text = "\n".join([f"{name.upper}: {data['status']} ({data['rpm_used']} / {data['rpm_limit']} RPM)" for name, data in router_status.items()])
+    router_text = "\n".join([f"{name.upper()}: {data['status']} ({data['rpm_used']} / {data['rpm_limit']} RPM)" for name, data in router_status.items()])
     
     #Queue Stats
     queue_info = job_queue.get_info(0)

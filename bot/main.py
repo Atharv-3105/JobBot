@@ -9,6 +9,7 @@ from bot.handlers.search import search_command, help_command
 from bot.handlers.agent_control import score_command, tailor_command
 from bot.handlers.stats import stats_command
 from bot.handlers.cancel import cancel_command
+from bot.handlers.admin import admin_stats_command
 from bot.worker import start_worker, job_queue
 from dotenv import load_dotenv
 import os
@@ -113,6 +114,7 @@ def main():
     application.add_handler(CommandHandler("tailor", tailor_command))
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
+    application.add_handler(CommandHandler("admin_stats", admin_stats_command))
     
     
     

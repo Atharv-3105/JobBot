@@ -48,16 +48,14 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='Markdown'
             )
             return
-            
-        
-    #Build profile dict directly from the DB JSON columns
-    profile = {
-        "name": user.username,
-        "target_roles": user.target_roles,
-        "skills": user.skills,
-        "experience_years": 1,
-        "location": "Remote"
-    }
+        #Build profile dict directly from the DB JSON columns
+        profile = {
+            "name": user.username,
+            "target_roles": user.target_roles,
+            "skills": user.skills,
+            "experience_years": 1,
+            "location": "Remote"
+        }
     
     #Prepare initial-state for LangGraph
     initial_state = {
