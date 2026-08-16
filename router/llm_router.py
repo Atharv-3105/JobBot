@@ -4,7 +4,7 @@ import os
 import time 
 from enum import Enum 
 from dataclasses import dataclass, field 
-from typing import Optional 
+from typing import Optional , List 
 from groq import AsyncGroq
 from google import genai 
 from google.genai import types
@@ -17,11 +17,21 @@ logger = logging.getLogger(__name__)
 
 #Priority of LLMs based on the task
 TASK_PROVIDER_ORDERS = {
-    "scoring": ["groq", "gemini", "cerebras", "openrouter"],
-    "tailoring": ["gemini", "groq", "cerebras", "openrouter"], 
+    "scoring": ["gemini", "groq", "cerebras", "openrouter"],
+    "tailoring": ["groq", "cerebras", "openrouter", "gemini"],
     "default": ["groq", "gemini", "cerebras", "openrouter"]
-    
 }
+
+#Provider Timeouts 
+PROVIDER_TIMEOUTS = {
+    "groq": 30.0,
+    "gemini": 30.0,
+    "cerebras": 45.0,
+    "openrouter": 60.0,
+}
+
+#Auto-Recovery seconds: If a provider is marked as ERROR, it will retry after this many secs
+ERROR_RECOVERY_SECONDS = 300
 
 class ProviderStatus(Enum):
     AVAILABLE = "available"
@@ -38,6 +48,8 @@ class Provider:
     requests_this_minute:   int = 0
     tokens_this_minute:     int = 0
     rate_limit_until:       float = 0.0
+    error_count:            int = 0
+    error_since:            float = 0.0    #To track time since marked as ERROR
     last_reset:             float = field(default_factory=time.time)
     
     def is_available(self)-> bool:
@@ -52,6 +64,20 @@ class Provider:
             if now >= self.rate_limit_until:
                 self._reset_counters()
                 self.status = ProviderStatus.AVAILABLE
+                logger.info(f"[LLMRouter]: {self.name} recovered from rate-limit")
+            else:
+                return False 
+            
+        #Check if ERROR provider can auto-recover
+        if self.status == ProviderStatus.ERROR:
+            if now - self.error_since >= ERROR_RECOVERY_SECONDS:
+                self._reset_counters()
+                
+                #TODO: Check on how we can implement Error checking auto-recovery
+                self.status = ProviderStatus.AVAILABLE
+                
+                self.error_count = 0
+                logger.info(f"[LLMRouter]: {self.name} auto-recovered from ERROR")
             else:
                 return False 
             
@@ -59,7 +85,7 @@ class Provider:
         if now - self.last_reset >= 60:
             self._reset_counters()
         
-        return self.status == ProviderStatus.AVAILABLE and self.requests_this_minute <= self.rpm_limit
+        return self.status == ProviderStatus.AVAILABLE and self.requests_this_minute < self.rpm_limit
         
     def _reset_counters(self):
         """ 
@@ -69,7 +95,7 @@ class Provider:
         self.tokens_this_minute = 0
         self.last_reset = time.time()
         
-    def mark_used(self, tokens_used: int = 500):
+    def mark_used(self, tokens_used: int):
         """ 
             Function which updates the model usage metrics
         """
@@ -88,8 +114,15 @@ class Provider:
         """ 
             Funtion which updates the model status to ERROR in-case of Error
         """
-        self.status = ProviderStatus.ERROR
-        logger.error(f"LLMRouter: {self.name} marked as error state")
+        self.error_count += 1
+        
+        #Only mark ERROR after 3 consecutive failures
+        if self.error_count >= 3:
+            self.status = ProviderStatus.ERROR
+            self.error_since = time.time()
+            logger.error(f"[LLMRouter]: {self.name} marked as ERRROR after {self.error_count} failures")
+        else:
+            logger.warning(f"[LLMRouter]: {self.name} error #{self.error_count}, will retry")
         
 class LLMRouter:
     """ 
@@ -125,18 +158,20 @@ class LLMRouter:
         self._openrouter_base = "https://openrouter.ai/api/v1"
         
         
-    def _get_available_provider(self, task_type: str) -> Optional[Provider]:
+    def _get_available_provider(self, task_type: str, exclude: List[str] = None) -> Optional[Provider]:
         """ 
-            Function which returns the highest-priority available provider based on the task-type
+            Function which returns the highest-priority available provider based on the task-type,
+            Optionally excludes providers that already failed this request
         """
+        exclude = exclude or []
+        available = [p for p in self.providers if p.is_available() and p.name not in exclude]
         
-        available = [p for p in self.providers if p.is_available()]
         if not available:
             return None 
         
-        #Feat: Sort the available providers based on task-specific order
-        order = TASK_PROVIDER_ORDERS.get(task_type, TASK_PROVIDER_ORDERS["default"])
-        available.sort(key = lambda p: order.index(p.name) if p.name in order else 99)
+        order = TASK_PROVIDER_ORDERS.get(task_type, TASK_PROVIDER_ORDERS['default'])
+        available.sort(key = lambda p : order.index(p.name) if p.name in order else 99)
+        
         return available[0]
     
     async def complete(self, system_prompt: str, user_message: str, temperature: float = 0.1, max_tokens: int = 500, max_retries: int = 3, task_type: str = "default")-> str:
@@ -146,46 +181,53 @@ class LLMRouter:
         
         """
         attempts = 0
-        while attempts <= max_retries:
+        max_provider_attempts = len(self.providers)  #We will try each provider at most once
+        failed_providers: List[str] = []
+        
+        while attempts < max_provider_attempts:
             provider = None 
             
-            
             async with self._lock:
-                provider = self._get_available_provider(task_type)
-                if not provider:
-                    logger.warning(f"LLMRouter: all providers are exhausted --- waiting 30s")
-                
-                
+                provider = self._get_available_provider(task_type, exclude=failed_providers)
+                  
             if not provider:
+                logger.warning(f"[LLMRouter]: all providers are exhausted --- waiting 30s")
+
                 await asyncio.sleep(30)
-                attempts += 1
+                #Reset the failed list after cooldown to allow retry
+                failed_providers = []
+                attempts = 0
                 continue
             
             try:
-                logger.info(f"LLMRouter: routing to {provider.name}")
+                logger.info(f"[LLMRouter]: routing to {provider.name}")
                 
-                result = await self._call_provider(provider, system_prompt, user_message, temperature, max_tokens)
+                result, token_used = await self._call_provider(provider, system_prompt, user_message, temperature, max_tokens)
                 
                 async with self._lock:
-                    provider.mark_used(tokens_used = max_tokens)
+                    provider.mark_used(tokens_used = token_used)
                 return result 
             
             except Exception as e:
                 error_str = str(e).lower()
+                #Append the failed-provider to our failed-providers list
+                failed_providers.append(provider.name)
                 
                 #Check for rate-limit or rate-limit status code '429' in the error response
-                if "rate limit" in error_str or "429" in error_str:
+                if "rate limit" in error_str or "429" in error_str or "too many requests" in error_str:
                     
                     #Check if 'retry-after' is present in the error_str
                     retry_after = 60
-                    if "retry_after" in error_str:
-                        try:
-                            retry_after = int(''.join(filter(str.isdigit, error_str[:50])))
-                        except ValueError:
-                            pass
+                    
+                    #Extract retry-after if present in the response
+                    for word in error_str.split():
+                        if word.isdigit() and int(word) < 3600:
+                            retry_after = int(word)
+                            break
 
                     async with self._lock:
                         provider.mark_rate_limited(retry_after)
+                        
                     logger.warning(f"[LLMRouter]: {provider.name} rate-limited, retry_after = {retry_after}s")
                         # if max_retries > 0:
                         #     logger.info(f"LLMRouter: retrying with different provider")
@@ -201,14 +243,16 @@ class LLMRouter:
                     logger.error(f"[LLMRouter]: {provider.name} error: {e}")
                 
                 attempts += 1 
-                if attempts > max_retries :
-                    raise RuntimeError(f"LLMRouter: all retries exhausted. Last error: {e}")
+                # if attempts > max_retries :
+                #     raise RuntimeError(f"LLMRouter: all retries exhausted. Last error: {e}")
 
                 #Add small delay before retry to prevent CPU-spped spinning 
                 await asyncio.sleep(1.0)
+                
+        raise RuntimeError(f"[LLMRouter]: All providers failed. Tried: {failed_providers}")
     
       
-    async def _call_provider(self, provider: Provider, system_prompt: str, user_message: str, temperature: float, max_tokens: int) -> str:
+    async def _call_provider(self, provider: Provider, system_prompt: str, user_message: str, temperature: float, max_tokens: int) -> tuple[str, int]:
         """ 
             Function to dispatch to the correct provider client
         """
@@ -222,13 +266,13 @@ class LLMRouter:
         elif provider.name == "cerebras":
             return await self._call_openai_compatible(
                 base_url = self._cerebras_base, api_key = os.getenv("CEREBRAS_API_KEY"), model = "llama3.3-70b",
-                system_prompt = system_prompt, user_message = user_message, temperature = temperature, max_tokens = max_tokens
+                system_prompt = system_prompt, user_message = user_message, temperature = temperature, max_tokens = max_tokens, timeout = PROVIDER_TIMEOUTS['cerebras'],
             )
             
         elif provider.name == "openrouter":
             return await self._call_openai_compatible(
                 base_url = self._openrouter_base, api_key = os.getenv("OPENROUTER_API_KEY"), model = "meta-llama/llama-3.3-70b-instruct:free",
-                system_prompt = system_prompt, user_message = user_message, temperature = temperature, max_tokens = max_tokens
+                system_prompt = system_prompt, user_message = user_message, temperature = temperature, max_tokens = max_tokens, timeout = PROVIDER_TIMEOUTS['openrouter'],
             )
             
         
@@ -236,7 +280,7 @@ class LLMRouter:
     
     
     
-    async def _call_groq(self, system_prompt, user_message, temperature, max_tokens) -> str:
+    async def _call_groq(self, system_prompt, user_message, temperature, max_tokens) -> tuple[str, int]:
         """ 
             Function to generate response by calling Groq provider
         """
@@ -250,10 +294,12 @@ class LLMRouter:
             max_tokens = max_tokens
         )
         
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content.strip()
+        tokens_used = response.usage.total_tokens if response.usage else max_tokens
+        return content, tokens_used
     
     
-    async def _call_gemini(self, system_prompt, user_message, temperature, max_tokens) -> str:
+    async def _call_gemini(self, system_prompt, user_message, temperature, max_tokens) -> tuple[str, int]:
         """ 
             Function to generate response by calling Gemini Provider
         """
@@ -268,26 +314,34 @@ class LLMRouter:
                 )
             )
             
-            if not response.candidates or not response.text:
-                logger.warning("Gemini returned empty/blocked response")
-                raise ValueError("gemini response blocked by safety filters")
+            if not response.candidates:
+                finish_reason = getattr(response, "prompt_feedback", None)
+                logger.warning(f"Gemini returned blocked response: {finish_reason}")
+                raise ValueError(f"Gemini response blocked: {finish_reason}")
             
-            return response.text.strip()
+            content = response.text.strip() if response.text else ""
+            if not content:
+                raise ValueError("Gemini returned empty content")
+            
+            #Estimate token usage
+            tokens_used = len(content.split())*2
+            return content, tokens_used
        
         except Exception as e:
             raise e 
     
     
-    async def _call_openai_compatible(self, base_url, api_key, model, system_prompt, user_message, temperature, max_tokens)-> str:
+    async def _call_openai_compatible(self, base_url, api_key, model, system_prompt, user_message, temperature, max_tokens, timeout: float)-> tuple[str, int]:
         """ 
             Function to generate response by calling Cerebras & OpenRouter providers
         """
-        async with httpx.AsyncClient(timeout = 30.0) as client:
+        async with httpx.AsyncClient(timeout = timeout) as client:
             
             response = await client.post(f"{base_url}/chat/completions", 
                                          headers = {
                                              "Authorization": f"Bearer {api_key}",
                                              "Content-Type": "application/json",
+                                             **({"HTTP-Referer": os.getenv("APP_URL", ""), "X-Title": "JobBot"} if "openrouter" in base_url else {}),
                                          },
                                          json = {
                                              "model": model,
@@ -300,7 +354,12 @@ class LLMRouter:
                                          })
             
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"].strip()
+            
+            data = response.json()
+            
+            content = data["choices"][0]["message"]["content"].strip()
+            tokens_used = data.get("usage", {}).get("total_tokens", len(content.split()) * 2)
+            return content, tokens_used
         
     
     def get_status(self) -> dict:
@@ -313,10 +372,11 @@ class LLMRouter:
                 "status": p.status.value,
                 "rpm_used": p.requests_this_minute,
                 "rpm_limit": p.rpm_limit,
+                "tpm_used": p.tokens_this_minute,
+                "tpm_limit": p.tpm_limit,
+                "error_count": p.error_count
             }
             for p in self.providers
         }
-        
-        
-        
+                
 llm_router = LLMRouter()
