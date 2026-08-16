@@ -5,7 +5,7 @@ from telegram import Update
 import uuid
 from telegram.ext import ContextTypes
 from db import get_db
-from db.crud import get_user, save_job, get_job_by_url
+from db.crud import get_user, save_job, get_job_by_url, check_rate_limit, format_cooldown
 from db.models import User 
 from agent.orchestrator import pipeline
 from portals.base import JobListing
@@ -16,19 +16,32 @@ from bot.worker import job_queue, BotTask
 logger = logging.getLogger(__name__)
 
       
-async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE, user_input: str):
+async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE, user_input: str, command_type: str):
     """ 
         Helper function to avoid duplicate code
     """   
     telegram_id = update.effective_user.id
     
     with get_db() as db:
+        #Check rate-limits for USER
+        is_allowed, reset_time = check_rate_limit(db, telegram_id, command_type)
+        if not is_allowed:
+            cooldown = format_cooldown(reset_time)
+            await update.message.reply_text(
+                f"⏳ **Rate Limit Reached**\n\n"
+                f"You've used your daily quota of `/{command_type}` commands.\n"
+                f"Resets in: **{cooldown}**",
+                parse_mode='Markdown'
+            )
+            return None, None, None, None
+        
         user = get_user(db, telegram_id)
         
         #If User not present in DB
         if not user:
             await update.message.reply_text(" ⚠️ Couldn't find you in my records. Please run `/start` first.", parse_mode = 'Markdown')
-            return None, None, None
+            return None, None, None,None
+        
         
         #Build the user-profile dict
         profile = {
@@ -38,6 +51,7 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
             "experience_years": 1,
             "location": "Remote"
         }
+           
             
     await update.message.reply_text("🔍 Analyzing input....", parse_mode = 'Markdown')
     title, company, jd_text, error = await process_job_input(user_input)
@@ -73,7 +87,7 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = " ".join(context.args)
     telegram_id = update.effective_user.id
     
-    user, profile, dummy_job, unique_url = await _prepare_manual_job(update, context, user_input)
+    user, profile, dummy_job, unique_url = await _prepare_manual_job(update, context, user_input, "score")
     
     #IF Job couldn't be created by manual_job_creation function
     if not dummy_job:
@@ -94,12 +108,12 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "final_report": "",
         "error": None
     }
-    
+
     #Build the Dedup key from UserID + JOBURL
     dedup_key = hashlib.md5(f"{telegram_id}:scoring:{unique_url}".encode()).hexdigest()
     
     #-----Check for duplicate------------
-    if job_queue.is_duplicate(task.task_id):
+    if job_queue.is_duplicate(dedup_key):
         await update.message.reply_text(f"⚠️ You already have a scoring task in progess.\n\n Use `/cancel` to stop it, or wait for it to finish.", parse_mode = 'Markdown')                     
         return 
     
@@ -107,15 +121,18 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     task = BotTask(chat_id = update.effective_chat.id, user_id = telegram_id,
                    task_type= "scoring", initial_state = initial_state, bot = context.bot, dedup_key= dedup_key)
     
+    #Get the queue info
+    queue_info = job_queue.get_info(telegram_id)
 
     added = await job_queue.put(task)
     
     if added:
         await update.message.reply_text(
-            "✅ **Job received!**\n\n"
-            "Added to background queue. I'll message you with the scored report and tailored PDF shortly (usually 30-60s).\n\n"
-            "Use `/cancel` to stop this task.",
-            parse_mode = 'Markdown'
+            f"✅ **Added to queue!**\n\n"
+            f"⚖️ Scoring: `{dummy_job.title}`\n"
+            f"📍 Queue Position: **#{queue_info['position']}**\n"
+            f"⏱️ Estimated Wait: **{queue_info['estimated_str']}**",
+            parse_mode='Markdown'
         )
     else:
         await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.", parse_mode = 'Markdown')
@@ -134,7 +151,7 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = " ".join(context.args)
     telegram_id = update.effective_user.id 
     
-    user, profile, dummy_job, unique_url = await _prepare_manual_job(update, context, user_input)
+    user, profile, dummy_job, unique_url = await _prepare_manual_job(update, context, user_input, "tailor")
     
     if not dummy_job:
         return 
@@ -177,11 +194,19 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dedup_key = dedup_key
     )
     
+    #-------Get the Queue Info-------
+    queue_info = job_queue.get_info(telegram_id)
     
     #-----Addded---------
     added = await job_queue.put(task)
     
     if added:
-        await update.message.reply_text("✂️ **Tailoring request received!**\n\nAdded to task-queue. I will send your custom PDF here shortly.", parse_mode = 'Markdown')
+        await update.message.reply_text(
+            f"✅ **Added to queue!**\n\n"
+            f"✂️ Tailoring: `{dummy_job.title}`\n"
+            f"📍 Queue Position: **#{queue_info['position']}**\n"
+            f"⏱️ Estimated Wait: **{queue_info['estimated_str']}**",
+            parse_mode='Markdown'
+        )
     else:
         await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.", parse_mode = 'Markdown')

@@ -2,6 +2,7 @@ import logging
 from telegram import Update 
 from telegram.ext import ContextTypes
 from db import get_db, get_user
+from db.crud import check_rate_limit, format_cooldown
 from bot.worker import job_queue, BotTask
 import json 
 import hashlib
@@ -13,10 +14,19 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"[SEARCH-BOT] Starting search..")
     if not context.args:
-        await update.message.reply_text("Usage: `/search <keyword>` (e.g. `/search Python ML Engineer`)", parse_mode = "Markdown")
+        await update.message.reply_text(
+            "Usage:\n"
+            "• `/search <keyword>` (Full pipeline: crawl + score + tailor) - *1 per day*\n"
+            "• `/search_quick <keyword>` (Crawl only, no tailoring) - *1 per hour*", 
+            parse_mode="Markdown"
+        )
         return 
     
-    keyword = " ".join(context.args)
+    #Determine if it's quick or full
+    is_quick = context.args[0].lower() == "--quick" or update.message.text.startswith("/search_quick")
+    keyword = " ".join(context.args).replace("--quick", "").strip()
+    command_type = "search_quick" if is_quick else "search_full"
+    
     telegram_id = update.effective_user.id 
     
     #Fetch User Profile from DB 
@@ -26,6 +36,19 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.error(f"[SEARCH-BOT] user {telegram_id} does not exist in the DB")
             await update.message.reply_text("⚠️ You haven't set up your profile yet. Please run `/start` first.", parse_mode = 'Markdown')
             return
+        
+        #Check Rate-Limits
+        is_allowed, reset_time = check_rate_limit(db, telegram_id, command_type)
+        if not is_allowed:
+            cooldown = format_cooldown(reset_time)
+            await update.message.reply_text(
+                f"⏳ **Rate Limit Reached**\n\n"
+                f"You've used your daily/hourly limit for `{command_type.replace('_', ' ')}`.\n"
+                f"Resets in: **{cooldown}**",
+                parse_mode='Markdown'
+            )
+            return
+            
         
     #Build profile dict directly from the DB JSON columns
     profile = {
@@ -44,13 +67,16 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "portals": "config/portals.yml",
         "profile": profile,
         "base_tex_path": user.resume_path,
-        "mode": "full",
+        "mode": "full" if not is_quick else "score", #Quick Mode stops after scoring
         "raw_jobs": [],
         "scored_jobs": [],
         "tailored_jobs": [],
         "final_report": "",
         "error": None
     }
+    
+    #Get the Queue Info
+    queue_info = job_queue.get_info(telegram_id)
     
     #Build DEDUP_KEY based on user + keyword(for search, keyword is the unique identifier)
     dedup_key = hashlib.md5(f"{telegram_id}:search:{keyword}".encode()).hexdigest()
@@ -77,7 +103,14 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     added = await job_queue.put(task)
     
     if added:
-        await update.message.reply_text(f"🔍 **Search received for '{keyword}'!**\n\nI've added this to my background queue. I will message you here with scored jobs and tailored PDFs as soon as it's ready (usually 1-2 minutes).", parse_mode='Markdown')
+        await update.message.reply_text(
+        f"✅ **Added to queue!**\n\n"
+        f"🔍 Searching for: `{keyword}`\n"
+        f"📊 Mode: `{'Quick (Crawl Only)' if is_quick else 'Full (Crawl + Score + Tailor)'}`\n"
+        f"📍 Queue Position: **#{queue_info['position']}**\n"
+        f"⏱️ Estimated Wait: **{queue_info['estimated_str']}**",
+        parse_mode='Markdown'
+    )
     else:
         await update.message.reply_text("⚠️ Failed to add task to queue. Please try again.", parse_mode = 'Markdown')
     
