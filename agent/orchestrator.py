@@ -82,8 +82,9 @@ async def tailor_node(state: AgentState) -> dict:
         #Check to skip Jobs which don't have ID in the DB
         if not sj.db_job_id:
             logger.error(f"Cannot tailor job without DB ID: {sj.job.url}")
-            continue        
-        tex_path, pdf_path = await tailor(base_tex_path=base_tex_path,
+            continue 
+               
+        tex_path, pdf_path, diff_summary = await tailor(base_tex_path=base_tex_path,
                                           jd_text = sj.job.jd_text,
                                           job_title = sj.job.title,
                                           company = sj.job.company,
@@ -99,6 +100,7 @@ async def tailor_node(state: AgentState) -> dict:
                 "strengths": sj.strengths[:4] if sj.strengths else [],
                 "gaps": sj.gaps[:4] if sj.gaps else [],
                 "recommendation": sj.recommendation,
+                "diff_summary": diff_summary,
                 "pdf_path": pdf_path
             })
         
@@ -138,14 +140,16 @@ async def log_node(state: AgentState) -> dict:
             
             strengths = job.get("strengths", [])
             gaps = job.get("gaps", [])
+            rec = job.get("recommendation", "")
+            diff = job.get("diff_summary")
             if strengths:
                 report += f"   💪 Strengths: {', '.join(strengths)}\n"
             if gaps:
                 report += f"   ⚠️ Gaps: {', '.join(gaps)}\n"
-                
-            rec = job.get("recommendation", "")
             if rec:
                 report += f"   💡 *{rec}*\n"
+            if diff:
+                report += f"    📝 **Changes Made:**\n  {job['diff_summary']}\n" 
                 
             report += f"   📄 PDF: `{job['pdf_path']}`\n\n"
     else:

@@ -2,8 +2,7 @@ import os
 import logging 
 import re 
 from typing import Tuple, Optional
-
-
+import difflib
 from router.llm_router import llm_router
 from db import crud
 from db.crud import get_db
@@ -85,7 +84,7 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
         return None
     
     
-def _inject_tailored_content(original_tex: str, original_blocks: list, llm_response: str) -> Optional[str]:
+def _inject_tailored_content(original_tex: str, original_blocks: list, llm_response: str) -> Tuple[Optional[str], dict]:
     """ 
         Function to inject the tailored LLM response back into the tex resume PDF
         We simply just match XML tags and replace string of original content with tailored content
@@ -94,6 +93,7 @@ def _inject_tailored_content(original_tex: str, original_blocks: list, llm_respo
     try:
         modified_tex = original_tex 
         tailored_blocks_for_validation = []
+        diff_data = {"added": [], "removed": []}
         for i, original_block in enumerate(original_blocks):
             #Extract the tailored block from the LLM's XML response
             tag_regex = re.compile(rf"<section_{i}>\s*(.*?)\s*</section_{i}>", re.DOTALL)
@@ -102,27 +102,36 @@ def _inject_tailored_content(original_tex: str, original_blocks: list, llm_respo
             if tag_match:
                 tailored_block = tag_match.group(1).strip()
                 tailored_blocks_for_validation.append(tailored_block)
-                
+    
                 #Replace the original block with the tailored block in the full LaTeX string
                 #We will use .replace(original, new, 1) to only replace the first occurence safely
                 modified_tex = modified_tex.replace(original_block, tailored_block, 1)
+                
+                #Generate the Deterministic diff for this block
+                block_diff = _get_deterministic_diff(original_block, tailored_block)
+                diff_data["added"].extend(block_diff["added"])
+                diff_data["removed"].extend(block_diff["removed"])
             else:
                 logger.warning(f"[TAILOR] XML tag <section_{i}> missing from LLM response: Skippin injection for this block.")
-                return None
+                return None, {}
         
         # #Verification: Post-Validation Step
         if not _validate_tailored_blocks(original_blocks, tailored_blocks_for_validation):
             logger.error("[TAILOR] LLM Hallucinated or Delted too much changes, Rejecting Changes")
-            return None
+            return None, {}
         
         #Verification: Ensure LaTeX structure is Intact
         if "\\begin{document}" not in modified_tex or "\\end{document}" not in modified_tex:
             raise ValueError("LaTeX structure corrupted during injection")
         
-        return modified_tex
+        #Deduplicate the Final Diff Lists
+        diff_data["added"] = list(set(diff_data["added"]))
+        diff_data["removed"] = list(set(diff_data["removed"]))
+        
+        return modified_tex, diff_data
     except Exception as e:
         logger.error(f"[TAILOR] Surgical injection failed: {e}. Falling back to original resume.")
-        return None 
+        return None, {}
     
 
 async def tailor(base_tex_path: str,
@@ -130,11 +139,11 @@ async def tailor(base_tex_path: str,
                  job_title:     str,
                  company:       str,
                  user_id:       int,
-                 job_id:        int) -> Tuple[Optional[str], Optional[str]]:
+                 job_id:        int) -> Tuple[Optional[str], Optional[str], str]:
     
     """ 
         Main entry point for Resume Tailoring
-        Returns: {Tex_path, Pdf_path} on Success, (None, None) on failure.
+        Returns: {Tex_path, Pdf_path, diff_summary} on Success, (None, None, "") on failure.
     """
     
     logger.info(f"[TAILOR] Starting resume tailoring for Job {job_id} ({company}) for User {user_id}")
@@ -151,20 +160,23 @@ async def tailor(base_tex_path: str,
         #Fix: If tailorable_blocks missing, Return None,None
         if not tailorable_blocks:
             logger.warning("[TAILOR] Could not extract tailorable sections. Returning Original")
-            return None, None 
+            return None, None, ""
         
         
         #---------Phase 2:-  LLM Tailoring
         llm_response = await _call_llm_for_tailoring(job_title, company, jd_text, tailorable_blocks)
         if not llm_response:
             logger.warning("[TAILOR] LLM response missing.")
-            return None, None    #Fallback to original resume is handled inside the function
+            return None, None, ""    #Fallback to original resume is handled inside the function
         
         
         #Phase 3:- Injection of tailored sections according to JD
-        modified_tex = _inject_tailored_content(original_tex, tailorable_blocks, llm_response)
+        modified_tex, diff_data  = _inject_tailored_content(original_tex, tailorable_blocks, llm_response)
         if not modified_tex:
-            return None, None      #Fallback to original is handled inside the function
+            return None, None, ""      #Fallback to original is handled inside the function
+        
+        #Generate Natural Language Summary of the Deterministic Diff
+        diff_summary = await _summarize_diff_with_llm(diff_data, job_title, company)
         
         #Phase 4:- Compilation and Storage
         output_dir = f"data/users/{user_id}/outputs"
@@ -173,7 +185,7 @@ async def tailor(base_tex_path: str,
         tex_path, pdf_path = compile_pdf(modified_tex, output_dir, filename_base)
         
         if not tex_path or not pdf_path:
-            return None, None 
+            return None, None, diff_summary
         
         #Phase 5:- Update the DB
         with get_db() as db:
@@ -181,15 +193,13 @@ async def tailor(base_tex_path: str,
             logger.info(f"[TAILOR] DB Updated. Job {job_id} marked as TAILORED")
             
         
-        return tex_path, pdf_path 
+        return tex_path, pdf_path, diff_summary
     
     except Exception as e:
         logger.error(f"[TAILOR] Fatal error in tailor pipeline: {e}")
-        return None, None
+        return None, None, ""
             
                 
-        
-        
 def _validate_tailored_blocks(original_blocks: list, tailored_blocks: list) -> bool:
     """ 
         Post-validation: Strips the LaTeX commands and checks if original core skills were deleted by the LLM
@@ -217,3 +227,82 @@ def _validate_tailored_blocks(original_blocks: list, tailored_blocks: list) -> b
                 return False 
             
     return True 
+
+
+def _get_deterministic_diff(original_text: str, tailored_text: str) -> dict:
+    """ 
+        Generates a deterministic, word/phrase-level diff between original and tailored tex
+        Strips LaTeX commands to focus on actual content changes, prevents syntax tags
+    """
+    def strip_latex(text: str) -> str:
+        """ 
+            Removes the LaTeX commands like \textbf{}, \section*{}, etc. 
+        """
+        
+        text = re.sub(r'\\[a-zA-Z*]+\{([^}]*)\}', r'\l', text)
+        text = re.sub(r'\\[a-zA-Z*]+', '', text)
+        
+        return text.strip()
+    
+    origi_clean = strip_latex(original_text)
+    tail_clean = strip_latex(tailored_text)
+    
+    #We use SequenceMatcher for Block-Level phrase diff
+    matcher = difflib.SequenceMatcher(None, origi_clean.split(), tail_clean.split())
+    
+    added_phrases = []
+    removed_phrases = []
+    
+    #get_opcodes function returns a tuple which tells how to convert string a into string b
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag in ('replace', 'delete'):
+            removed_phrases.append(" ".join(origi_clean.split()[i1:i2]))
+        if tag in ('replace', 'insert'):
+            added_phrases.append(" ".join(tail_clean.split()[j1:j2]))
+            
+    
+    #Clean the punctuation and deduplicate
+    added = list(set([p.strip('.,;:(){}[]\\') for p in added_phrases if re.search(r'[a-zA-Z0-9]', p)]))
+    removed = list(set([p.strip('.,;:(){}[]\\')for p in removed_phrases if re.search(r'[a-zA-Z0-9]', p)]))
+    
+    
+    return {
+        "added": added, 
+        "removed": removed
+    }
+    
+async def _summarize_diff_with_llm(diff_data: dict, job_title: str, company: str) -> str:
+    """ 
+        Uses LLM to translate the deterministic diff into a 1-2 sentence natural language summary.
+    """
+    
+    added_str = ", ".join(diff_data["added"]) if diff_data["added"] else "None"
+    removed_str = ", ".join(diff_data["removed"]) if diff_data["removed"] else "None"
+    
+    prompt = f"""
+                You are a helpful assistant. A user's resume was updated for a {job_title} role at {company}. 
+                Here is a deterministic, algorithmic list of content changes made to the resume:
+                - Added keywords/skills: {added_str}
+                - Removed keywords/skills: {removed_str}
+
+                Summarize these exact changes in 1-2 concise, professional sentences explaining how the resume was improved for this specific role. 
+                STRICT RULE: Do NOT hallucinate or mention any changes, skills, or projects that are not explicitly listed in the 'Added' or 'Removed' lists above.
+            """
+    
+    try:
+        summary = await llm_router.complete(system_prompt="You are a concise, factual resume assistant",
+                                            user_message = prompt,
+                                            temperature = 0.1,
+                                            max_tokens = 150,
+                                            task_type = "tailoring")
+        
+        return summary.strip()
+    
+    except Exception as e:
+        logger.warning(f"[TAILOR] LLM Diff summarization failed, falling back to raw diff")
+        #WE Fallback to raw deterministic string if LLM fails
+        return f"Added: {added_str}. Removed: {removed_str}"
+    
+    
+        
+    
