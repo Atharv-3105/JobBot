@@ -5,7 +5,7 @@ from telegram import Update
 import uuid
 from telegram.ext import ContextTypes
 from db import get_db
-from db.crud import get_user, save_job, get_job_by_url, check_rate_limit, format_cooldown
+from db.crud import get_user, save_job, get_job_by_url, check_rate_limit
 from db.models import User 
 from agent.orchestrator import pipeline
 from portals.base import JobListing
@@ -24,12 +24,10 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     with get_db() as db:
         #Check rate-limits for USER
-        is_allowed, reset_time = check_rate_limit(db, telegram_id, command_type)
+        is_allowed, cooldown = check_rate_limit(db, telegram_id, command_type)
         if not is_allowed:
-            cooldown = format_cooldown(reset_time)
             await update.message.reply_text(
                 f"⏳ **Rate Limit Reached**\n\n"
-                f"You've used your daily quota of `/{command_type}` commands.\n"
                 f"Resets in: **{cooldown}**",
                 parse_mode='Markdown'
             )

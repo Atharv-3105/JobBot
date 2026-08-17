@@ -38,12 +38,10 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         
         #Check Rate-Limits
-        is_allowed, reset_time = check_rate_limit(db, telegram_id, command_type)
+        is_allowed, cooldown = check_rate_limit(db, telegram_id, command_type)
         if not is_allowed:
-            cooldown = format_cooldown(reset_time)
             await update.message.reply_text(
                 f"⏳ **Rate Limit Reached**\n\n"
-                f"You've used your daily/hourly limit for `{command_type.replace('_', ' ')}`.\n"
                 f"Resets in: **{cooldown}**",
                 parse_mode='Markdown'
             )
