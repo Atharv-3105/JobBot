@@ -276,7 +276,7 @@ async def test_llm_router_failover():
          patch.object(router, "_call_gemini", new=mock_gemini):
         
         # FIX 2: Pass the task_type parameter we added in the Worker brick
-        result = await router.complete("test prompt", "test message", max_retries=3, task_type="scoring")
+        result = await router.complete("test prompt", "test message", max_retries=3, task_type="scoring", )
         
         assert result == "Success from Gemini"
         assert call_count["groq"] == 1
