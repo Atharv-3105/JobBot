@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, select, func 
 from sqlalchemy.orm import sessionmaker 
 from datetime import datetime, timezone
+import time 
 from typing import Optional, List 
 import os 
 import json
@@ -10,11 +11,13 @@ from datetime import datetime, timedelta, timezone
 from db.models import Base, User, Job, Application, JobStatus, RateLimit
 
 
+#Window durations in seconds: 24h, 1h, 6h(21600s), 6h(21600)s
+#If needed to switch to 12-hourly, change 21600 to 43200.
 RATE_LIMITS = {
     "search_full": (1, 86400),  #1 per day
     "search_quick": (1, 3600),  #1 per hour
-    "score":        (3, 86400), #3 per day
-    "tailor":       (3, 86400), #3 per day
+    "score":        (3, 21600), #3 per day
+    "tailor":       (3, 21600), #3 per day
 }
 
 #Setup the DB connection
@@ -319,17 +322,18 @@ def count_users(db) -> int:
         
     
 #-------------------------Rate Limit-----------------------
-def check_rate_limit(db, user_id: int, command: str) -> tuple[bool, datetime]:
+def check_rate_limit(db, user_id: int, command: str) -> tuple[bool, str]:
     """ 
-        Checks if user can execute command, If yes: increments count and returns [True, reset_time]
+        Checks if user can execute command, If yes: increments count, stores the current_timestamp in timestamp table and [True, "0m"]
         If no, returns [False, reset_time]
     """
     
     if command not in RATE_LIMITS:
-        return True, datetime.now(timezone.utc)
+        return True, "0m"
     
     max_count, duration_sec = RATE_LIMITS[command]
-    now = datetime.now(timezone.utc)
+    now =  time.time()
+    cutoff = now - duration_sec
     
     query = select(RateLimit).where(RateLimit.user_id == user_id, RateLimit.command == command)
     limit_record = db.execute(query).scalar_one_or_none()
@@ -339,31 +343,28 @@ def check_rate_limit(db, user_id: int, command: str) -> tuple[bool, datetime]:
         limit_record = RateLimit(
             user_id=user_id,
             command=command,
-            count=1,
-            reset_time=now + timedelta(seconds=duration_sec)
+            timestamps = [now],
         )
         db.add(limit_record)
         db.commit()
-        return True, limit_record.reset_time
+        return True, format_cooldown(now + duration_sec)
     
-    # CASE 2: Record exists — normalize (SQLite strips tzinfo) then compare
-    reset_time = normalize_dt(limit_record.reset_time)
+    #Sliding Window: Filter out timestamps older than the window
+    valid_timestamps = [ts for ts in limit_record.timestamps if ts > cutoff]
     
-    if now >= reset_time:
-        # Reset period passed — reset counter
-        limit_record.count = 1
-        limit_record.reset_time = now + timedelta(seconds=duration_sec)
-        db.commit()
-        return True, limit_record.reset_time
-    
-    # CASE 3: Within window — check if limit reached
-    if limit_record.count >= max_count:
-        return False, reset_time  # Return normalized reset_time for display
-    
-    # CASE 4: Within window and under limit — increment
-    limit_record.count += 1
+    #If number of timestamps present for the command in the DB are greater than max-allowed
+    if len(valid_timestamps) >= max_count:
+        #Calculate when the oldest valid timestamp will expire(i.e the moment slot will be open)
+        oldest = min(valid_timestamps)
+        reset_time = oldest + duration_sec
+        return False, format_cooldown(reset_time)
+        
+    # CASE: Add new timestamp and save
+    valid_timestamps.append(now)
+    limit_record.timestamps = valid_timestamps
     db.commit()
-    return True, reset_time
+    
+    return True, format_cooldown(now + duration_sec)
 
 def format_cooldown(reset_time: datetime) -> str:
     """ 
