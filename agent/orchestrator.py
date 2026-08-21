@@ -47,8 +47,11 @@ async def score_node(state: AgentState) -> dict:
         #Load user-profile from DB or Config
         profile = state["profile"]
         
-        scored = await score_listing(state["raw_jobs"], profile, user_id = state["user_id"])
-        logger.info(f"[SCORER] {len(scored)} jobs passed the A/B threshold")
+        #get the mode from state, default to full
+        mode = state.get("mode", "full")
+        
+        scored = await score_listing(state["raw_jobs"], profile, user_id = state["user_id"], mode = mode)
+        logger.info(f"[SCORER] {len(scored)} jobs scored")
         return {"scored_jobs": scored}
     
     except Exception as e:
@@ -69,6 +72,22 @@ async def tailor_node(state: AgentState) -> dict:
             "tailored_jobs": [],
         }
         
+    mode = state.get("mode", "full")
+    
+    if mode == "tailor":
+        jobs_to_tailor = state["scored_jobs"]
+        logger.info(f"[TAILOR] Mode is 'tailor' - Tailoring all {len(jobs_to_tailor)} jobs")
+    else:
+        #Filter to A/B jobs for /search and /score commands
+        jobs_to_tailor = [sj for sj in state["scored_jobs"] if sj.score in ['A', 'B']]
+        logger.info(f"[TAILOR] {len(jobs_to_tailor)} jobs scored A/B out of {len(state["scored_jobs"])} jobs")
+        
+    if not jobs_to_tailor:
+        logger.info("[TAILOR] No jobs to tailor resume")
+        return {
+            "tailored_jobs": [],
+        }
+        
     logger.info(f"[TAILOR] Tailoring resume for {len(state['scored_jobs'])} jobs...")
     tailored_results = []
     
@@ -76,7 +95,7 @@ async def tailor_node(state: AgentState) -> dict:
     #This will be updated to dynamic per-user path
     base_tex_path = state["base_tex_path"]
     
-    for sj in state["scored_jobs"]:
+    for sj in jobs_to_tailor:
         logger.info(f"[TAILOR] Tailoring for {sj.job.company}")
         
         #Check to skip Jobs which don't have ID in the DB
@@ -90,6 +109,8 @@ async def tailor_node(state: AgentState) -> dict:
                                           company = sj.job.company,
                                           user_id = state["user_id"],
                                           job_id = sj.db_job_id)
+        
+        logger.info(f"[DEBUG DIFF] received diff summary from tailor Node: {diff_summary}")
         
         if pdf_path:
             tailored_results.append({
@@ -121,6 +142,7 @@ async def log_node(state: AgentState) -> dict:
     """
     
     logger.info("[LOGG] Generating final report.....")
+    mode = state.get("mode", "full")
     
     report = f" 🎯 **Search Complete For: '{state['keyword']}'**\n\n"
 
@@ -136,22 +158,37 @@ async def log_node(state: AgentState) -> dict:
         report += "✅ **Ready to Apply: **\n"
         for job in state["tailored_jobs"]:
             report += f"🔹 **{job['title']}** at {job['company']}\n"
+            
+            if mode in ["score", "tailor"] and job["score"] in ["C", "D", "F"]:
+                report += f"  ⚠️ **Low Match Warning:** This JD doesn't align well with your core skills. "
+                report += f"The tailored resume injects relevant keywords, but review carefully before applying.\n"
+
             report += f"🏆 Score: **{job['score']}** | Match: **{job.get('match_percentage', 0)}%**\n"
             
             strengths = job.get("strengths", [])
             gaps = job.get("gaps", [])
             rec = job.get("recommendation", "")
-            diff = job.get("diff_summary")
+            diff = job.get("diff_summary", "fallback")
+            logger.info(f"[DEBUGG] Received Diff: {diff}")
             if strengths:
-                report += f"   💪 Strengths: {', '.join(strengths)}\n"
+                report += f"💪 Strengths: {', '.join(strengths)}\n"
             if gaps:
-                report += f"   ⚠️ Gaps: {', '.join(gaps)}\n"
+                report += f"⚠️ Gaps: {', '.join(gaps)}\n"
             if rec:
-                report += f"   💡 *{rec}*\n"
+                report += f"💡 *{rec}*\n"
             if diff:
-                report += f"    📝 **Changes Made:**\n  {job['diff_summary']}\n" 
+                report += f"📝**Changes Made:**\n  {diff}\n" 
                 
-            report += f"   📄 PDF: `{job['pdf_path']}`\n\n"
+            report += f"📄 PDF: `{job['pdf_path']}`\n\n"
+            
+    elif state.get("scored_jobs") and mode in ["score", "tailor"]:
+        #For /score and /tailor commands, show all scored jobs(even if low scores)
+        report += "**Scored Jobs:**\n"
+        for sj in state["scored_jobs"]:
+            report += f"• **{sj.job.title}** at {sj.job.company} (Score: {sj.score})\n"
+            if sj.score in ['D', 'F']:
+                report += f"  ⚠️ Low match - consider reviewing the JD alignment\n"
+            report += f"  Match: {sj.match_percentage}% | Strengths: {', '.join(sj.strengths[:2]) if sj.strengths else 'None'}\n\n"
     else:
         report += "❌ No jobs scored high enough (A/B) to tailor resumes for.\n" 
         
@@ -174,10 +211,20 @@ def route_after_scoring(state: AgentState) -> Literal["tailor_node", "log_node"]
     """ 
         Conditional Edge: If we have A/B jobs then go to tailor Node,Otherwise, skip to log.
     """    
+    mode = state.get("mode", "full")
+    scored_jobs = state.get("scored_jobs", [])
     
-    if state.get("scored_jobs") and len(state["scored_jobs"]) > 0:
+    #For /tailor command, always go to tailor_node 
+    if mode == "tailor":
+        if scored_jobs:
+            return "tailor_node"
+        return "log_node"
+    
+    #For /search and /score commands, only tailor if we have A/B jobs
+    ab_jobs = [sj for sj in scored_jobs if sj.score in ['A', 'B']]
+    if ab_jobs:
         return "tailor_node"
-
+        
     return "log_node"
 
 def route_after_router(state: AgentState) -> Literal["crawl_node", "score_node", "tailor_node"]:

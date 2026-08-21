@@ -237,7 +237,7 @@ async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) 
         return [ScoredJob(job = j, score = "C", match_percentage=50, strengths = [], gaps = [str(e)], recommendation="Error") for j in jobs]
     
 
-async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id: int = None) -> List[ScoredJob]:
+async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id: int = None, mode: str = "search") -> List[ScoredJob]:
     """ 
         This function is the main entry point for the Scorer Node
         Supports Caching By Job-URL, Tailor Only A/B Scores
@@ -245,11 +245,20 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
     
     logger.info(f"[SCORER]: Received {len(jobs)} jobs to evaluate")
     
-    #------------- Rule based Pre-Filter------------------
-    filtered_jobs = [job for job in jobs if passess_rule_filter(job, profile) and passes_experience_filter(job, profile)]
-    dropped_count = len(jobs) - len(filtered_jobs)
-    logger.info(f"[SCORER]: Rule-Based Filter dropped {dropped_count} jobs. {len(filtered_jobs)} remaining")
+    #Context-Aware Filtering
+    if mode == "search":
+        #We do aggressive filtering for high-volume crawl results
     
+        #------------- Rule based Pre-Filter------------------
+        filtered_jobs = [job for job in jobs if passess_rule_filter(job, profile) and passes_experience_filter(job, profile)]
+        dropped_count = len(jobs) - len(filtered_jobs)
+        logger.info(f"[SCORER]: Rule-Based Filter dropped {dropped_count} jobs. {len(filtered_jobs)} remaining")
+        
+    else:
+        #NO filtering for explicit user requests(/score, /tailor)
+        filtered_jobs = jobs 
+        logger.info(f"[SCORER]: Mode is {mode} - Skipping rule-based filter")
+        
     #check if filtered_jobs is None
     if not filtered_jobs:
         return []
@@ -332,8 +341,15 @@ async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id
     #Combine Cached and Newly Scored Jobs
     all_scored_jobs = cached_scored_jobs + newly_scored_jobs
     
-    final_jobs = [sj for sj in all_scored_jobs if sj.score in ["A", "B"]]
-    logger.info(f"[SCORER]: {len(final_jobs)} jobs scored A or B and will proceed to tailoring.")
+    #Mode-Aware filtering
+    if mode == "search":
+        final_jobs = [sj for sj in all_scored_jobs if sj.score in ["A", "B"]]
+        logger.info(f"[SCORER]: {len(final_jobs)} jobs scored A or B and will proceed to tailoring.")
+    
+    else:
+        #For /score, /tailor commands, return ALL jobs so the user sees the result
+        final_jobs = all_scored_jobs
+        logger.info(f"[SCORER]: Mode is '{mode}' - Returning all {len(final_jobs)} scored jobs for user review.")
     
     return final_jobs
             
