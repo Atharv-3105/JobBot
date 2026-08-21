@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 
 #Priority of LLMs based on the task
 TASK_PROVIDER_ORDERS = {
-    "scoring": ["gemini", "groq", "cerebras", "openrouter"],
-    "tailoring": ["groq", "cerebras", "openrouter", "gemini"],
-    "default": ["groq", "gemini", "cerebras", "openrouter"]
+    "scoring": ["openrouter", "groq", "gemini", "cerebras"],
+    "tailoring": ["groq", "openrouter", "cerebras", "gemini"],
+    "default": ["openrouter", "groq", "gemini", "cerebras"]
 }
 
 #Provider Timeouts 
@@ -134,10 +134,10 @@ class LLMRouter:
     
     def __init__(self):
         self.providers = [
-            Provider(name = "groq", priority = 1, rpm_limit = 30, tpm_limit = 6000),
-            Provider(name = "gemini", priority = 2, rpm_limit = 15, tpm_limit = 1000000),
-            Provider(name = "cerebras", priority = 3, rpm_limit = 30, tpm_limit = 60000),
-            Provider(name = "openrouter", priority = 4, rpm_limit = 20, tpm_limit = 200000),
+            Provider(name = "openrouter", priority = 1, rpm_limit = 20, tpm_limit = 200000),
+            Provider(name = "groq", priority = 2, rpm_limit = 30, tpm_limit = 6000),
+            Provider(name = "gemini", priority = 3, rpm_limit = 15, tpm_limit = 1000000),
+            Provider(name = "cerebras", priority = 4, rpm_limit = 30, tpm_limit = 60000),
         ]
         
         #Get a mutex lock
@@ -271,7 +271,7 @@ class LLMRouter:
             
         elif provider.name == "openrouter":
             return await self._call_openai_compatible(
-                base_url = self._openrouter_base, api_key = os.getenv("OPENROUTER_API_KEY"), model = "meta-llama/llama-3.3-70b-instruct:free",
+                base_url = self._openrouter_base, api_key = os.getenv("OPEN_ROUTER_API_KEY"), model = "nvidia/nemotron-3-ultra-550b-a55b:free",
                 system_prompt = system_prompt, user_message = user_message, temperature = temperature, max_tokens = max_tokens, timeout = PROVIDER_TIMEOUTS['openrouter'],
             )
             
@@ -285,7 +285,7 @@ class LLMRouter:
             Function to generate response by calling Groq provider
         """
         response = await self._groq.chat.completions.create(
-            model = "llama-3.3-70b-versatile",
+            model = "openai/gpt-oss-120b",
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message},
@@ -295,7 +295,7 @@ class LLMRouter:
         )
         
         content = response.choices[0].message.content.strip()
-        tokens_used = response.usage.total_tokens if response.usage else max_tokens
+        tokens_used = response.usage.total_tokens if response.usage else max_tokens // 2
         return content, tokens_used
     
     
@@ -341,7 +341,7 @@ class LLMRouter:
                                          headers = {
                                              "Authorization": f"Bearer {api_key}",
                                              "Content-Type": "application/json",
-                                             **({"HTTP-Referer": os.getenv("APP_URL", ""), "X-Title": "JobBot"} if "openrouter" in base_url else {}),
+                                            #  **({"HTTP-Referer": os.getenv("APP_URL", ""), "X-Title": "JobBot"} if "openrouter" in base_url else {}),
                                          },
                                          json = {
                                              "model": model,
