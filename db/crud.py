@@ -366,31 +366,30 @@ def check_rate_limit(db, user_id: int, command: str) -> tuple[bool, str]:
     
     return True, format_cooldown(now + duration_sec)
 
-def format_cooldown(reset_time: datetime) -> str:
+def format_cooldown(reset_time: float) -> str:
     """ 
         Formats the remaining cooldown time into a human-readable string
     """
-    now = datetime.now(timezone.utc)
-    reset_time = normalize_dt(reset_time)
+    now = time.time()
     
     remaining = reset_time - now 
     
-    if remaining.total_seconds() <= 0:
+    if remaining <= 0:
         return "0 minutes"
     
-    hours = int(remaining.total_seconds() // 3600)
-    minutes = int((remaining.total_seconds() % 3600) // 60)
+    hours = int(remaining// 3600)
+    minutes = int((remaining % 3600) // 60)
     
     if hours > 0:
         return f"{hours}h {minutes}m"
     
     return f"{minutes}m"
     
-def normalize_dt(dt: datetime) -> datetime:
-    """ 
-        Ensure datetime is timezone-aware
-    """
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo = timezone.utc)
+# def normalize_dt(dt: datetime) -> datetime:
+#     """ 
+#         Ensure datetime is timezone-aware
+#     """
+#     if dt.tzinfo is None:
+#         return dt.replace(tzinfo = timezone.utc)
 
-    return dt 
+#     return dt 
