@@ -1,7 +1,7 @@
 import os 
 import logging 
 import re 
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 import difflib
 from router.llm_router import llm_router
 from db import crud
@@ -41,30 +41,52 @@ STRICT RULES:
    - Keep the exact same number of bullet points (\item).
 """
 
+#----------------LaTeX stripping (shared logic - unescape + strip commands)---------------
+def _strip_latex(text: str) -> str:
+    """ 
+        Function which removes LaTeX commands/escapes, returns plain readable text
+    """
+    if not text:
+        return ""
+    
+    text = re.sub(r'\\([&%$#_{}~^])', r'\1', text)          # unescape \& \% etc.
+    text = re.sub(r'\\[a-zA-Z*]+\{([^}]*)\}', r'\1', text)   # \textbf{X} -> X
+    text = re.sub(r'\\[a-zA-Z*]+', '', text)                 # remaining bare commands
+    text = re.sub(r'[{}]', '', text)                         # stray braces
+    return re.sub(r'\s+', ' ', text).strip()
+
+_NUMBER_WORD_RE = re.compile(
+    r'\b(one|two|three|four|five|six|seven|eight|nine|ten|'
+    r'eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty|forty|fifty|'
+    r'hundred|thousand|million|billion|dozen)\b',
+    re.IGNORECASE
+)
+
+def _contains_quantifier(text: str) -> bool:
+    """ 
+        Function which returns True if text has a digit or a spelled-out number word
+    """
+    if not text:
+        return False 
+    
+    return bool(re.search(r'\d', text) or _NUMBER_WORD_RE.search(text))
+
+
+#----------------------Per-Section Deterministic Diff----------------------
 
 def _get_deterministic_diff(original_text: str, tailored_text: str) -> dict:
     """ 
         Generates a deterministic, word/phrase-level diff between original and tailored tex
         Strips LaTeX commands to focus on actual content changes, prevents syntax tags
     """
-    def strip_latex(text: str) -> str:
-        """ 
-            Removes the LaTeX commands like \textbf{}, \section*{}, etc. 
-        """
-        
-        text = re.sub(r'\\[a-zA-Z*]+\{([^}]*)\}', r'\1', text)
-        text = re.sub(r'\\[a-zA-Z*]+', '', text)
-        
-        return text.strip()
-    
-    origi_clean = strip_latex(original_text)
-    tail_clean = strip_latex(tailored_text)
+    origi_clean = _strip_latex(original_text)
+    tail_clean = _strip_latex(tailored_text)
     
     #We use SequenceMatcher for Block-Level phrase diff
     matcher = difflib.SequenceMatcher(None, origi_clean.split(), tail_clean.split())
     
-    added_phrases = []
-    removed_phrases = []
+    added_phrases,removed_phrases  = [], []
+    
     
     #get_opcodes function returns a tuple which tells how to convert string a into string b
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
@@ -75,11 +97,11 @@ def _get_deterministic_diff(original_text: str, tailored_text: str) -> dict:
             
     
     #Clean the punctuation and deduplicate
-    added = list(set([p.strip('.,;:(){}[]\\') for p in added_phrases if re.search(r'[a-zA-Z0-9]', p)]))
-    removed = list(set([p.strip('.,;:(){}[]\\')for p in removed_phrases if re.search(r'[a-zA-Z0-9]', p)]))
+    added = list(set(p.strip('.,;:(){}[]\\') for p in added_phrases if re.search(r'[a-zA-Z0-9]', p)))
+    removed = list(set(p.strip('.,;:(){}[]\\')for p in removed_phrases if re.search(r'[a-zA-Z0-9]', p)))
     
-    if not added or not removed:
-        logger.info(f"[TAILOR]: Diff Generation failed")
+    if not added and not removed:
+        logger.info(f"[TAILOR]: No content changes detected for this section")
     
     logger.info(f"[DEBUG] Diff added: {added} | removed: {removed}")
     return {
@@ -87,50 +109,108 @@ def _get_deterministic_diff(original_text: str, tailored_text: str) -> dict:
         "removed": removed
     }
     
-async def _summarize_diff_with_llm(diff_data: dict, job_title: str, company: str) -> str:
+def _section_label(section_type: str) -> str:
+    return {
+        "summary": "Summary",
+        "skills": "Skills",
+        "experience": "Experience"
+    }.get(section_type, section_type.title())
+    
+def _deterministic_fallback_summary(per_section_diff: List[dict])-> str:
     """ 
-        Uses LLM to translate the deterministic diff into a 1-2 sentence natural language summary.
+        Summary built purely from diff data - used when the LLM summary call fails
+        or returns empty, so the user never sees a blank section
+    """
+    lines = []
+    for entry in per_section_diff:
+        label = _section_label(entry["section_type"])
+        
+        if entry.get("blocked"):
+            lines.append(f"**{label}:** No changes applied (reverted - a numeric claim would have been altered)")
+            continue 
+            
+        added, removed = entry["added"], entry["removed"]
+        if not added and not removed:
+            lines.append(f"**{label}:** No changes")
+            continue 
+        
+        parts = []
+        if added:
+            parts.append(f"added: {', '.join(added[:6])}")
+        if removed:
+            parts.append(f"removed: {', '.join(removed[:6])}")
+        
+        lines.append(f"**{label}:**" + "; ".join(parts))
+    
+    return "\n".join(lines)
+
+    
+async def _summarize_diff_with_llm(per_section_diff: List[dict], job_title: str, company: str) -> str:
+    """ 
+        Uses LLM to translate the deterministic diff into a short, section-labeled natural language summary,
+        Falls back to a deterministic summary in case of erorr
     """
     
-    added_str = ", ".join(diff_data["added"]) if diff_data["added"] else "None"
-    removed_str = ", ".join(diff_data["removed"]) if diff_data["removed"] else "None"
+    section_blocks = []
+    for entry in per_section_diff:
+        label = _section_label(entry["section_type"])
+        if entry.get("blocked"):
+            section_blocks.append(f"{label}: NO CHANGES (this section is not to be changed)")
+            continue 
     
-    logger.info(f"[DEBUG] Diff added_str: {added_str} | remove_strd: {removed_str}")
+        added_str = ", ".join(entry["added"]) if entry["added"] else "None"
+        removed_str = ", ".join(entry["removed"]) if entry["removed"] else "None"
+        
+        section_blocks.append(f"{label}:\n Added: {added_str}\n Removed: {removed_str}")
+        
+    diff_text = "\n\n".join(section_blocks)
     
     prompt = f"""
-                You are a helpful assistant. A user's resume was updated for a {job_title} role at {company}. 
-                Here is a deterministic, algorithmic list of content changes made to the resume:
-                - Added keywords/skills: {added_str}
-                - Removed keywords/skills: {removed_str}
-
-                Summarize these exact changes in 1-2 concise, professional sentences explaining how the resume was improved for this specific role. 
-                STRICT RULE: Do NOT hallucinate or mention any changes, skills, or projects that are not explicitly listed in the 'Added' or 'Removed' lists above.
+                A user's resume was updated for a {job_title} role at {company}.
+                Here is a deterministic, algorithmic, section-by-section list of content changes:
+ 
+                {diff_text}
+ 
+                Write a short summary (1 sentence per section that actually changed; skip sections
+                with no changes) explaining how the resume was adapted for this role.
+                STRICT RULE: Do NOT mention any change, skill, or project not explicitly listed above.
+                Do NOT invent a reason for a section marked "NO CHANGES".
             """
-    
+ 
     try:
         summary = await llm_router.complete(system_prompt="You are a concise, factual resume assistant",
                                             user_message = prompt,
                                             temperature = 0.1,
-                                            max_tokens = 150,
+                                            max_tokens = 1500,
                                             task_type = "tailoring")
         
-        return summary.strip()
+        summary = (summary or "").strip()
+        
+        if not summary:
+            #No exception raise, but content was empty - this is a failure
+            logger.warning("[TAILOR] LLM diff summary returned empty content, using deterministic fallback")
+            return _deterministic_fallback_summary(per_section_diff)
+        
+        return summary
     
     except Exception as e:
-        logger.warning(f"[TAILOR] LLM Diff summarization failed, falling back to raw diff")
+        logger.warning(f"[TAILOR] LLM Diff summarization failed ({e}), falling back to raw diff")
         #WE Fallback to raw deterministic string if LLM fails
-        return f"Added: {added_str}. Removed: {removed_str}"
+        return _deterministic_fallback_summary(per_section_diff)
+    
+    
+#---------------------------LLM Tailoring Call----------------------------------
 
-async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, sections: list) -> Optional[str]:
+async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, sections: List[Tuple[str, str]]) -> Optional[str]:
     """ 
         LLM Tailoring with XML structural enforcement and fallback
+        Args: sections is a list of (section_type, section_text).
     """ 
     
     #Fix: Wrap extracted sections in XML tags
     wrapped_sections = ""
-    for i, section in enumerate(sections):
-        wrapped_sections += f"<section_{i}>\n{section}\n</section_{i}>\n\n"
-        
+    for i, (section_type, section_text) in enumerate(sections):
+        wrapped_sections += f'<section_{i} type="{section_type}">\n{section_text}\n</section_{i}>\n\n'    
     
     
     USER_MESSAGE = f""" 
@@ -144,11 +224,22 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
     TAILORED RESUME SECTIONS: 
     """
     
+    
+    #Every input section must come back tagged, or injection can't proceed
+    #Passed to the router as validate_fn so a provider returning a partial/malformed structure triggers failover to the next provider instead
+    #of being slientyl accepted as "successful" call
+    def _has_all_section_tags(content: str) -> bool:
+        stripped = content.strip().removeprefix("```latex").removesuffix("```").strip()
+        return all(re.search(rf'<section_{i}(?:\s[^>]*)?>', stripped) for i in range(len(sections)))
+    
+    
+    
     try:
         #Call LLMROuter for JSON output, Note: Use high tokens limit
         raw_content = await llm_router.complete(
             system_prompt=SYSTEM_PROMPT, user_message = USER_MESSAGE,
-            temperature = 0.2, max_tokens = 3000, task_type = "tailoring"
+            temperature = 0.2, max_tokens = 3000, task_type = "tailoring",
+            validate_fn = _has_all_section_tags,
         )
         
         #Strip the markdown symbols if LLM ignored the instructions
@@ -163,63 +254,83 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
         logger.error(f"[TAILOR] LLM Tailoring failed or validation failed: {e}. Falling back to original resume.")
         return None
     
-    
-def _inject_tailored_content(original_tex: str, original_blocks: list, llm_response: str) -> Tuple[Optional[str], dict]:
+#------------------------Injection + Section-Aware Validation-----------------------    
+def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str, str]], llm_response: str) -> Tuple[Optional[str], List[dict]]:
     """ 
         Function to inject the tailored LLM response back into the tex resume PDF
-        We simply just match XML tags and replace string of original content with tailored content
+        `original_blocks` is a list of (section_type, original_block_text).
+ 
+        Returns (modified_tex, per_section_diff) where per_section_diff is a
+        list of dicts: {section_type, added, removed, blocked}.
+    
+        Experience sections whose diff touches a number/quantifier are REJECTED:
+        the original block is kept instead of the tailored one, and the section
+        is marked blocked=True so the summary can note it honestly.
     """
     
     try:
         modified_tex = original_tex 
         tailored_blocks_for_validation = []
-        diff_data = {"added": [], "removed": []}
-        for i, original_block in enumerate(original_blocks):
+        per_section_diff: List[dict] = []
+        for i, (section_type, original_block) in enumerate(original_blocks):
             #Extract the tailored block from the LLM's XML response
-            tag_regex = re.compile(rf"<section_{i}>\s*(.*?)\s*</section_{i}>", re.DOTALL)
+            tag_regex = re.compile(rf'<section_{i}[^>]*>\s*(.*?)\s*</section_{i}>', re.DOTALL)
             tag_match = tag_regex.search(llm_response)
             
-            if tag_match:
-                tailored_block = tag_match.group(1).strip()
-                tailored_blocks_for_validation.append(tailored_block)
-    
-                #Replace the original block with the tailored block in the full LaTeX string
-                #We will use .replace(original, new, 1) to only replace the first occurence safely
-                modified_tex = modified_tex.replace(original_block, tailored_block, 1)
+            if not tag_match:
+                logger.warning(f"[TAILOR] XML tag <section_{i}> missing from LLM response, Skipping injection for this block")
+                return None, []
+            
+            tailored_block = tag_match.group(1).strip()
+            tailored_blocks_for_validation.append(tailored_block)
+            
+            block_diff = _get_deterministic_diff(original_block, tailored_block)
+            changed_phrases = block_diff["added"] + block_diff["removed"]
+            
+            #Check for quantifier change 
+            if section_type == "experience" and any(_contains_quantifier(p) for p in changed_phrases):
+                logger.warning(
+                    f"[TAILOR] Rejected experience-section change for job section_{i}: "
+                    f"quantifier change detected in {changed_phrases}. Reverting to original text."
+                )
                 
-                #Generate the Deterministic diff for this block
-                block_diff = _get_deterministic_diff(original_block, tailored_block)
-                diff_data["added"].extend(block_diff["added"])
-                diff_data["removed"].extend(block_diff["removed"])
-            else:
-                logger.warning(f"[TAILOR] XML tag <section_{i}> missing from LLM response: Skippin injection for this block.")
-                return None, {}
+                #Revert back to use the ORIGINAL block, not the tailored one.
+                modified_tex = modified_tex.replace(original_block, original_block, 1)
+                per_section_diff.append({
+                    "section_type": section_type,
+                    "added": [], "removed": [],
+                    "blocked": True, 
+                })
+                continue 
+            
+            #We can apply this section's tailored content
+            modified_tex = modified_tex.replace(original_block, tailored_block, 1)
+            per_section_diff.append({
+                "section_type": section_type,
+                "added": block_diff["added"],
+                "removed": block_diff["removed"],
+                "blocked": False, 
+            })
+            
+        original_texts_only = [b[1] for b in original_blocks]
+        if not _validate_tailored_blocks(original_texts_only, tailored_blocks_for_validation):
+            logger.error("[TAILOR] LLM Hallucinated or deleted too much content, Rejecting changes.")
+            return None, []
         
-        # #Verification: Post-Validation Step
-        if not _validate_tailored_blocks(original_blocks, tailored_blocks_for_validation):
-            logger.error("[TAILOR] LLM Hallucinated or Delted too much changes, Rejecting Changes")
-            return None, {}
-        
-        #Verification: Ensure LaTeX structure is Intact
+
         if "\\begin{document}" not in modified_tex or "\\end{document}" not in modified_tex:
             raise ValueError("LaTeX structure corrupted during injection")
         
-        #Deduplicate the Final Diff Lists
-        diff_data["added"] = list(set(diff_data["added"]))
-        diff_data["removed"] = list(set(diff_data["removed"]))
-        
-        return modified_tex, diff_data
+        return modified_tex, per_section_diff
+    
     except Exception as e:
         logger.error(f"[TAILOR] Surgical injection failed: {e}. Falling back to original resume.")
-        return None, {}
-    
+        return None, []
 
-async def tailor(base_tex_path: str,
-                 jd_text:        str,
-                 job_title:     str,
-                 company:       str,
-                 user_id:       int,
-                 job_id:        int) -> Tuple[Optional[str], Optional[str], str]:
+#--------------------------------Main Entry Point-----------------------------
+async def tailor(base_tex_path: str,jd_text:  str,
+                 job_title:     str,company:  str,
+                 user_id:       int,job_id:   int) -> Tuple[Optional[str], Optional[str], str]:
     
     """ 
         Main entry point for Resume Tailoring
@@ -233,7 +344,7 @@ async def tailor(base_tex_path: str,
         with open(base_tex_path, "r", encoding = "utf-8") as f:
             original_tex = f.read()
             
-        #--------Phase 1:- Parse The Resume
+        #--------Phase 1:- Parse The Resume----------------
         parser = LatexParser()
         original_tex, tailorable_blocks = parser.parse(original_tex)
         
@@ -243,7 +354,7 @@ async def tailor(base_tex_path: str,
             return None, None, ""
         
         
-        #---------Phase 2:-  LLM Tailoring
+        #---------Phase 2:-  LLM Tailoring--------------------
         llm_response = await _call_llm_for_tailoring(job_title, company, jd_text, tailorable_blocks)
         if not llm_response:
             logger.warning("[TAILOR] LLM response missing.")
@@ -251,12 +362,12 @@ async def tailor(base_tex_path: str,
         
         
         #Phase 3:- Injection of tailored sections according to JD
-        modified_tex, diff_data  = _inject_tailored_content(original_tex, tailorable_blocks, llm_response)
+        modified_tex, per_section_diff  = _inject_tailored_content(original_tex, tailorable_blocks, llm_response)
         if not modified_tex:
             return None, None, ""      #Fallback to original is handled inside the function
         
         #Generate Natural Language Summary of the Deterministic Diff
-        diff_summary = await _summarize_diff_with_llm(diff_data, job_title, company)
+        diff_summary = await _summarize_diff_with_llm(per_section_diff, job_title, company)
         
         #Phase 4:- Compilation and Storage
         output_dir = f"data/users/{user_id}/outputs"
@@ -279,18 +390,15 @@ async def tailor(base_tex_path: str,
         return None, None, ""
             
                 
-def _validate_tailored_blocks(original_blocks: list, tailored_blocks: list) -> bool:
+def _validate_tailored_blocks(original_blocks: List[str], tailored_blocks: List[str]) -> bool:
     """ 
         Post-validation: Strips the LaTeX commands and checks if original core skills were deleted by the LLM
         for preventing Hallucination in the response
     """
     
-    #Simple regex to strip LaTeX commands, keeping just the text content
-    strip_latex = lambda x: re.sub(r'\\[a-zA-Z*]+\{([^}]*)\}', r'\1',x)
-    
     for original, tailored in zip(original_blocks, tailored_blocks):
-        orig_text = strip_latex(original)
-        tail_text = strip_latex(tailored)
+        orig_text = _strip_latex(original)
+        tail_text = _strip_latex(tailored)
         
         #Extract words for comparison
         orig_words = set(re.findall(r'[a-zA-Z0-9+#]+', orig_text.lower()))
