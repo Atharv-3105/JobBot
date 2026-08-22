@@ -136,64 +136,87 @@ async def tailor_node(state: AgentState) -> dict:
     }
     
     
+SCORE_EMOJI = {"A": "🟢", "B": "🟡", "C": "🟠", "D": "🔴", "F": "⚫"}
+
+
 async def log_node(state: AgentState) -> dict:
-    """ 
+    """
         Node which runs LOGGER AGENT to format the final report for the end-user
     """
-    
+
     logger.info("[LOGG] Generating final report.....")
     mode = state.get("mode", "full")
-    
-    report = f" 🎯 **Search Complete For: '{state['keyword']}'**\n\n"
+
+    report = f"🎯 *Search Complete: {state['keyword']}*\n"
 
     if state.get("error"):
-        report += f"⚠️**Error:** {state['error']}\n" 
-        
-    report += f"📊**Pipeline Stats:**\n"
-    report += f"- Crawled:  {len(state.get('raw_jobs', []))} jobs\n"
-    report += f"- Scored (A/B): {len(state.get('scored_jobs', []))} jobs\n" 
-    report += f"- Tailored PDFs for: {len(state.get('tailored_jobs', []))} jobs\n\n"
-    
-    if state.get("tailored_jobs"):
-        report += "✅ **Ready to Apply: **\n"
-        for job in state["tailored_jobs"]:
-            report += f"🔹 **{job['title']}** at {job['company']}\n"
-            
-            if mode in ["score", "tailor"] and job["score"] in ["C", "D", "F"]:
-                report += f"  ⚠️ **Low Match Warning:** This JD doesn't align well with your core skills. "
-                report += f"The tailored resume injects relevant keywords, but review carefully before applying.\n"
+        report += f"⚠️ Error: {state['error']}\n"
 
-            report += f"🏆 Score: **{job['score']}** | Match: **{job.get('match_percentage', 0)}%**\n"
-            
+    report += (
+        f"\n📊 *Pipeline Stats*\n"
+        f"Crawled: {len(state.get('raw_jobs', []))} · "
+        f"Scored A/B: {len(state.get('scored_jobs', []))} · "
+        f"Tailored: {len(state.get('tailored_jobs', []))}\n"
+    )
+    report += "─────────────────────\n"
+
+    if state.get("tailored_jobs"):
+        report += "\n✅ *Ready to Apply*\n"
+
+        for job in state["tailored_jobs"]:
+            score = job.get("score", "C")
+            emoji = SCORE_EMOJI.get(score, "⚪")
+
+            report += f"\n🔹 *{job['title']}* — {job['company']}\n"
+            report += f"{emoji} Score: {score}  |  Match: {job.get('match_percentage', 0)}%\n"
+
+            if mode in ["score", "tailor"] and score in ["C", "D", "F"]:
+                report += (
+                    "⚠️ Low match — this JD doesn't align well with your core skills. "
+                    "Review the tailored resume carefully before applying.\n"
+                )
+
+            # Guard: for manually-entered jobs, the company placeholder
+            # ("Direct Input") isn't a real strength — don't show it as one.
             strengths = job.get("strengths", [])
-            gaps = job.get("gaps", [])
-            rec = job.get("recommendation", "")
-            diff = job.get("diff_summary", "fallback")
-            logger.info(f"[DEBUGG] Received Diff: {diff}")
-            if strengths:
+            is_placeholder_strength = strengths and strengths == [job.get("company")]
+            if strengths and not is_placeholder_strength:
                 report += f"💪 Strengths: {', '.join(strengths)}\n"
+
+            gaps = job.get("gaps", [])
             if gaps:
                 report += f"⚠️ Gaps: {', '.join(gaps)}\n"
-            if rec:
-                report += f"💡 *{rec}*\n"
-            if diff:
-                report += f"📝**Changes Made:**\n  {diff}\n" 
-                
-            report += f"📄 PDF: `{job['pdf_path']}`\n\n"
-            
-    elif state.get("scored_jobs") and mode in ["score", "tailor"]:
-        #For /score and /tailor commands, show all scored jobs(even if low scores)
-        report += "**Scored Jobs:**\n"
-        for sj in state["scored_jobs"]:
-            report += f"• **{sj.job.title}** at {sj.job.company} (Score: {sj.score})\n"
-            if sj.score in ['D', 'F']:
-                report += f"  ⚠️ Low match - consider reviewing the JD alignment\n"
-            report += f"  Match: {sj.match_percentage}% | Strengths: {', '.join(sj.strengths[:2]) if sj.strengths else 'None'}\n\n"
-    else:
-        report += "❌ No jobs scored high enough (A/B) to tailor resumes for.\n" 
-        
-    return {"final_report": report}
 
+            rec = job.get("recommendation", "")
+            if rec:
+                report += f"💡 {rec}\n"
+
+            # diff_summary is now always non-empty (tailor.py guarantees a
+            # deterministic fallback), but guard anyway for safety.
+            diff = job.get("diff_summary")
+            if not diff or not diff.strip():
+                diff = "Diff summary unavailable for this tailoring pass."
+            report += f"\n📝 *Changes Made*\n{diff}\n"
+
+            report += f"\n📄 `{job['pdf_path']}`\n"
+            report += "─────────────────────\n"
+
+    elif state.get("scored_jobs") and mode in ["score", "tailor"]:
+        report += "\n📋 *Scored Jobs*\n"
+        for sj in state["scored_jobs"]:
+            emoji = SCORE_EMOJI.get(sj.score, "⚪")
+            report += f"\n🔹 *{sj.job.title}* — {sj.job.company}  {emoji} {sj.score}\n"
+
+            if sj.score in ["D", "F"]:
+                report += "⚠️ Low match — consider reviewing JD alignment.\n"
+
+            strengths = ', '.join(sj.strengths[:2]) if sj.strengths else "None"
+            report += f"Match: {sj.match_percentage}% | Strengths: {strengths}\n"
+
+    else:
+        report += "\n❌ No jobs scored high enough (A/B) to tailor resumes for.\n"
+
+    return {"final_report": report}
 
 #--------------------Router Node------------------------------
 def router_node(state: AgentState) -> dict:
