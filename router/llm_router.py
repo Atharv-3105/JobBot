@@ -4,7 +4,7 @@ import os
 import time 
 from enum import Enum 
 from dataclasses import dataclass, field 
-from typing import Optional , List 
+from typing import Optional , List, Callable
 from groq import AsyncGroq
 from google import genai 
 from google.genai import types
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 #Priority of LLMs based on the task
 TASK_PROVIDER_ORDERS = {
     "scoring": ["openrouter", "groq", "gemini", "cerebras"],
-    "tailoring": ["groq", "openrouter", "cerebras", "gemini"],
+    "tailoring": ["openrouter", "groq", "cerebras", "gemini"],
     "default": ["openrouter", "groq", "gemini", "cerebras"]
 }
 
@@ -174,7 +174,8 @@ class LLMRouter:
         
         return available[0]
     
-    async def complete(self, system_prompt: str, user_message: str, temperature: float = 0.1, max_tokens: int = 500, max_retries: int = 3, task_type: str = "default")-> str:
+    async def complete(self, system_prompt: str, user_message: str, temperature: float = 0.1, 
+                       max_tokens: int = 500, max_retries: int = 3, task_type: str = "default", validate_fn: Optional[Callable[[str], bool]] = None)-> str:
         """ 
             Function which sends a Completion Request, routing to the best available provider,
             Automatically fails over on rate-limit or error
@@ -203,6 +204,14 @@ class LLMRouter:
                 logger.info(f"[LLMRouter]: routing to {provider.name}")
                 
                 result, token_used = await self._call_provider(provider, system_prompt, user_message, temperature, max_tokens)
+                
+                
+                #We are using caller-defined validation, A provider can return a perfectly successfull, non-empty response that still fails
+                #the caller's structural requirements
+                #We will treat this a ProviderError so our error handling can manage it by calling other providers, instead of failover/returning unsuable content
+                
+                if validate_fn is not None and not validate_fn(result):
+                    raise ValueError(f"{provider.name} returned content that failed caller validation")
                 
                 async with self._lock:
                     provider.mark_used(tokens_used = token_used)
@@ -294,7 +303,11 @@ class LLMRouter:
             max_tokens = max_tokens
         )
         
-        content = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+        
+        #Validation: Empty Content Check 
+        if not content:
+            raise ValueError("Groq returned empty content")
         tokens_used = response.usage.total_tokens if response.usage else max_tokens // 2
         return content, tokens_used
     
@@ -335,9 +348,12 @@ class LLMRouter:
         """ 
             Function to generate response by calling Cerebras & OpenRouter providers
         """
+        if not api_key:
+            raise ValueError(f"No API key configured for {base_url}")
+
         async with httpx.AsyncClient(timeout = timeout) as client:
-            
-            response = await client.post(f"{base_url}/chat/completions", 
+
+            response = await client.post(f"{base_url}/chat/completions",
                                          headers = {
                                              "Authorization": f"Bearer {api_key}",
                                              "Content-Type": "application/json",
@@ -354,10 +370,18 @@ class LLMRouter:
                                          })
             
             response.raise_for_status()
-            
+
             data = response.json()
+
+            if "choices" not in data:
+                err = data.get("error", data)
+                raise ValueError(f"{model} returned no choices: {err}")
+
+            content = data["choices"][0]["message"]["content"].strip() if data["choices"][0]["message"].get("content") else ""
+            #Validation: Empty Content Check           
+            if not content:
+                raise ValueError(f"{model} returned empty content")
             
-            content = data["choices"][0]["message"]["content"].strip()
             tokens_used = data.get("usage", {}).get("total_tokens", len(content.split()) * 2)
             return content, tokens_used
         
