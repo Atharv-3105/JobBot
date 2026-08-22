@@ -245,7 +245,7 @@ async def start_worker(worker_id: int):
             
             try:
                 #Mark the task as processing 
-                job_queue.mark_processing(task)
+                await job_queue.mark_processing(task)
                 logger.info(f"[QUEUE] Worker{worker_id} | Processing {task.task_type} task | User {task.user_id} | Key: {task.dedup_key}")
                 
                 #Process the task 
