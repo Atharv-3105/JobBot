@@ -7,9 +7,36 @@ from typing import Tuple, Optional
 
 logger = logging.getLogger(__name__)
 
+_COMPANY_LABEL_RE = re.compile(r'\bcompany\s*:\s*([A-Z][\w&.,\'\-]{1,60})', re.IGNORECASE)
+_JOIN_COMPANY_RE = re.compile(r'\bjoin\s+(?:the\s+team\s+at\s+)?([A-Z][\w&.\'\-]*(?:\s+[A-Z][\w&.\'\-]*){0,3})\b')
+_AT_COMPANY_RE = re.compile(r'\bat\s+([A-Z][\w&.\'\-]*(?:\s+[A-Z][\w&.\'\-]*){0,3})\b')
+_TITLE_LABEL_RE = re.compile(r'\b(?:job\s*title|position|role)\s*:\s*(.{3,80})', re.IGNORECASE)
 
 #Sites with heavy Anti-Bot Protection, we won't crawl these
 BLOCKED_DOMAINS = ["linkedin.com", "wellfound.com", "naukri.com", "indeed.com", "glassdoor.com", "instahyre.com", "cutshort.io"]
+
+
+def _extract_company_title(txt: str) -> Tuple[str, str]:
+    """ 
+        Extracts title/company using simple RE based patterns.
+    """
+    search_window = txt[:1500]
+    
+    title_match = _TITLE_LABEL_RE.search(search_window)
+    if title_match:
+        title = title_match.group(1).strip().split("\n")[0].strip()
+    else:
+        lines = txt.split("\n")
+        title = lines[0].strip() if lines and len(lines[0].strip()) < 100 else "Custom Role"
+        
+    company = None 
+    for pattern in (_COMPANY_LABEL_RE, _JOIN_COMPANY_RE, _AT_COMPANY_RE):
+        match = pattern.search(search_window)
+        if match:
+            company = match.group(1).strip().rstrip('.,')
+            break 
+    
+    return title or "Custom Role", company or "Not specified"
 
 async def process_job_input(user_input: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
     """ 
@@ -68,7 +95,5 @@ async def process_job_input(user_input: str) -> Tuple[Optional[str], Optional[st
         
     else:
         #Try to guess title from first line if it looks like one
-        lines = user_input.split("\n")
-        title = lines[0] if lines and len(lines[0]) < 100 else "Custom Role"    
-        
-        return title, "Direct Input", user_input[:4000], None
+        title, company = _extract_company_title(user_input)
+        return title, company, user_input[:4000], None 
