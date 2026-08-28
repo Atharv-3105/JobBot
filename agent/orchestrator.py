@@ -95,6 +95,12 @@ async def tailor_node(state: AgentState) -> dict:
     #This will be updated to dynamic per-user path
     base_tex_path = state["base_tex_path"]
     
+    #Build the candidate's verified skill whitelist so the tailoring LLM/validator can never inject a skill the User never claimed
+    profile = state.get("profile", {})
+    profile_skills = profile.get("skills", {})
+    allowed_skills = [s for tier in ("core", "primary", "secondary", "basic") for s in profile_skills.get(tier, [])]
+    
+    
     for sj in jobs_to_tailor:
         logger.info(f"[TAILOR] Tailoring for {sj.job.company}")
         
@@ -108,7 +114,8 @@ async def tailor_node(state: AgentState) -> dict:
                                           job_title = sj.job.title,
                                           company = sj.job.company,
                                           user_id = state["user_id"],
-                                          job_id = sj.db_job_id)
+                                          job_id = sj.db_job_id,
+                                          allowed_skills = allowed_skills)
         
         logger.info(f"[DEBUG DIFF] received diff summary from tailor Node: {diff_summary}")
         

@@ -363,4 +363,5 @@ if __name__ == "__main__":
     # results = asyncio.run(run_all_tests())
     
     # asyncio.run(run_stress_test("groq", num_requests=15))
-    asyncio.run(run_stress_test("gemini", num_requests=10))
+    # asyncio.run(run_stress_test("gemini", num_requests=10))
+    asyncio.run(test_provider_simple("openrouter"))

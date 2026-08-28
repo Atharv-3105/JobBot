@@ -9,6 +9,7 @@ from db.crud import get_db
 from db.models import JobStatus
 from resume.parser import LatexParser
 from resume.compiler import compile_pdf
+from resume import skill_normalizer
 
 
 logger = logging.getLogger(__name__)
@@ -29,9 +30,14 @@ STRICT RULES:
    - DO NOT invent new years of experience, DO NOT add core technologies that were not in the original summary, and DO NOT fabricate metrics or achievements.
    - Keep it under 3 sentences. Preserve LaTeX formatting commands.
 
-5. MODIFYING SKILLS: 
-   - Inject technical skills from the JD to beat ATS filters. 
-   - Do NOT delete original skills. Do NOT invent soft skills. 
+5. MODIFYING SKILLS (CRITICAL):
+   - You will be given an ALLOWED_SKILLS list - the candidate's verified, real skills.
+   - You may ONLY mention skills, tools, or technologies that appear in ALLOWED_SKILLS.
+   - You may reorder/re-emphasize/rephrase existing skills to match the JD's terminology
+     (e.g. if ALLOWED_SKILLS has "React" and the JD says "React.js", you may write "React.js").
+   - You are STRICTLY FORBIDDEN from adding any skill, tool, framework, or technology that
+     is not in ALLOWED_SKILLS, even if the JD explicitly requires it. Do NOT invent soft skills.
+   - Do NOT delete original skills.
    - Preserve LaTeX formatting (like \textbf{Category:}, '\newline', etc.).
 
 6. MODIFYING EXPERIENCE (CRITICAL): 
@@ -126,7 +132,8 @@ def _deterministic_fallback_summary(per_section_diff: List[dict])-> str:
         label = _section_label(entry["section_type"])
         
         if entry.get("blocked"):
-            lines.append(f"**{label}:** No changes applied (reverted - a numeric claim would have been altered)")
+            reason = entry.get("blocked_reason", "a numeric claim would have been altered")
+            lines.append(f"**{label}:** No changes applied (reverted - {reason}")
             continue 
             
         added, removed = entry["added"], entry["removed"]
@@ -155,7 +162,8 @@ async def _summarize_diff_with_llm(per_section_diff: List[dict], job_title: str,
     for entry in per_section_diff:
         label = _section_label(entry["section_type"])
         if entry.get("blocked"):
-            section_blocks.append(f"{label}: NO CHANGES (this section is not to be changed)")
+            reason = entry.get("blocked_reason", "this section is not to be changed")
+            section_blocks.append(f"{label}: NO CHANGES ({reason})")
             continue 
     
         added_str = ", ".join(entry["added"]) if entry["added"] else "None"
@@ -201,10 +209,11 @@ async def _summarize_diff_with_llm(per_section_diff: List[dict], job_title: str,
     
 #---------------------------LLM Tailoring Call----------------------------------
 
-async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, sections: List[Tuple[str, str]]) -> Optional[str]:
+async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, sections: List[Tuple[str, str]], allowed_skills: List[str]) -> Optional[str]:
     """ 
         LLM Tailoring with XML structural enforcement and fallback
         Args: sections is a list of (section_type, section_text).
+        Function Args Update: added Candidate's SKILL WHITE_LIST
     """ 
     
     #Fix: Wrap extracted sections in XML tags
@@ -212,11 +221,16 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
     for i, (section_type, section_text) in enumerate(sections):
         wrapped_sections += f'<section_{i} type="{section_type}">\n{section_text}\n</section_{i}>\n\n'    
     
+    allowed_skills_str = ", ".join(sorted(set(allowed_skills))) if allowed_skills else "(none declared)"
     
     USER_MESSAGE = f""" 
     JOB: {job_title} at {company}
     
     JOB DESCRIPTION (TRUNCATED): {jd_text[:1200]}
+    
+    ALLOWED_SKILLS (the candidate's verified skills - you may ONLY use skills from this
+    list in the Skills section, in any phrasing/order that matches the JD's terminology):
+    {allowed_skills_str}
     
     CURRENT RESUME SECTIONS: 
     {wrapped_sections}    
@@ -245,7 +259,7 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
         #Strip the markdown symbols if LLM ignored the instructions
         raw_content = raw_content.strip().removeprefix("```latex").removesuffix("```").strip()
         #Fix: Basic validation; Ensure at least the first XML tag exists
-        if "<section_0>" not in raw_content:
+        if not re.search(r'<section_0(?:\s[^>]*)?>', raw_content):
             raise ValueError("LLM did not return the required XML structure")
         
         return raw_content 
@@ -255,7 +269,7 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
         return None
     
 #------------------------Injection + Section-Aware Validation-----------------------    
-def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str, str]], llm_response: str) -> Tuple[Optional[str], List[dict]]:
+def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str, str]], llm_response: str, allowed_skills: List[str]) -> Tuple[Optional[str], List[dict]]:
     """ 
         Function to inject the tailored LLM response back into the tex resume PDF
         `original_blocks` is a list of (section_type, original_block_text).
@@ -298,10 +312,31 @@ def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str,
                 modified_tex = modified_tex.replace(original_block, original_block, 1)
                 per_section_diff.append({
                     "section_type": section_type,
-                    "added": [], "removed": [],
+                    "added": [], 
+                    "removed": [],
                     "blocked": True, 
+                    "blocked_reason": "a numeric claim would have been altered"
                 })
                 continue 
+            
+            #Candidate's WHITE-LIST SKILLS Check
+            if section_type == "skills":
+                disallowed = [p for p in block_diff["added"] if not skill_normalizer.is_allowed(p, allowed_skills)]
+                
+                #If any disallowed skill added, fallback to using original text
+                if disallowed:
+                    logger.warning(f"[TAILOR] Rejected skills-section change for job section_{i}: unverified skill(s) {disallowed} not in candidate's allowed_skills list. Reverting to original text")
+                    
+                    modified_tex = modified_tex.replace(original_block, original_block, 1)
+                    
+                    per_section_diff.append({
+                        "section_type": section_type,
+                        "added": [],
+                        "removed": [],
+                        "blocked": True,
+                        "blocked_reason": f"unverified skill(s) requested by JD: {', '.join(disallowed)}",
+                    })
+                    continue
             
             #We can apply this section's tailored content
             modified_tex = modified_tex.replace(original_block, tailored_block, 1)
@@ -330,7 +365,8 @@ def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str,
 #--------------------------------Main Entry Point-----------------------------
 async def tailor(base_tex_path: str,jd_text:  str,
                  job_title:     str,company:  str,
-                 user_id:       int,job_id:   int) -> Tuple[Optional[str], Optional[str], str]:
+                 user_id:       int,job_id:   int,
+                 allowed_skills: Optional[List[str]] = None) -> Tuple[Optional[str], Optional[str], str]:
     
     """ 
         Main entry point for Resume Tailoring
@@ -338,6 +374,7 @@ async def tailor(base_tex_path: str,jd_text:  str,
     """
     
     logger.info(f"[TAILOR] Starting resume tailoring for Job {job_id} ({company}) for User {user_id}")
+    allowed_skills = allowed_skills or []
     
     try:
         #Read the Base-Resume
@@ -355,14 +392,14 @@ async def tailor(base_tex_path: str,jd_text:  str,
         
         
         #---------Phase 2:-  LLM Tailoring--------------------
-        llm_response = await _call_llm_for_tailoring(job_title, company, jd_text, tailorable_blocks)
+        llm_response = await _call_llm_for_tailoring(job_title, company, jd_text, tailorable_blocks, allowed_skills)
         if not llm_response:
             logger.warning("[TAILOR] LLM response missing.")
             return None, None, ""    #Fallback to original resume is handled inside the function
         
         
         #Phase 3:- Injection of tailored sections according to JD
-        modified_tex, per_section_diff  = _inject_tailored_content(original_tex, tailorable_blocks, llm_response)
+        modified_tex, per_section_diff  = _inject_tailored_content(original_tex, tailorable_blocks, llm_response, allowed_skills)
         if not modified_tex:
             return None, None, ""      #Fallback to original is handled inside the function
         

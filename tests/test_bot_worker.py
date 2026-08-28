@@ -115,7 +115,7 @@ async def test_graceful_shutdown_drain(mock_bot):
     
     # We await get, mark done, and wait for drain
     retrieved = await tq.get()
-    await tq.task_done(retrieved.dedup_key)
+    tq.task_done(retrieved.dedup_key)
     
     drained = await tq.wait_for_drain(timeout=1.0)
     assert drained is True
