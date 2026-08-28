@@ -16,10 +16,14 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 #Priority of LLMs based on the task
+#openrouter/openrouter_glm/openrouter_minimax are 3 different free models all
+#routed through OpenRouter, so a single free model being deprecated/overloaded
+#(as nvidia/nemotron was mid-session) doesn't take out the whole "openrouter" slot -
+#the router fails over between models before ever falling through to groq/gemini/cerebras.
 TASK_PROVIDER_ORDERS = {
-    "scoring": ["openrouter", "groq", "gemini", "cerebras"],
-    "tailoring": ["openrouter", "groq", "cerebras", "gemini"],
-    "default": ["openrouter", "groq", "gemini", "cerebras"]
+    "scoring": ["openrouter", "openrouter_glm", "openrouter_minimax", "groq", "gemini", "cerebras"],
+    "tailoring": ["openrouter", "openrouter_glm", "openrouter_minimax", "groq", "cerebras", "gemini"],
+    "default": ["openrouter", "openrouter_glm", "openrouter_minimax", "groq", "gemini", "cerebras"]
 }
 
 #Provider Timeouts 
@@ -135,6 +139,8 @@ class LLMRouter:
     def __init__(self):
         self.providers = [
             Provider(name = "openrouter", priority = 1, rpm_limit = 20, tpm_limit = 200000),
+            Provider(name = "openrouter_glm", priority = 1, rpm_limit = 20, tpm_limit = 200000),
+            Provider(name = "openrouter_minimax", priority = 1, rpm_limit = 20, tpm_limit = 200000),
             Provider(name = "groq", priority = 2, rpm_limit = 30, tpm_limit = 6000),
             Provider(name = "gemini", priority = 3, rpm_limit = 15, tpm_limit = 1000000),
             Provider(name = "cerebras", priority = 4, rpm_limit = 30, tpm_limit = 60000),
@@ -184,15 +190,22 @@ class LLMRouter:
         attempts = 0
         max_provider_attempts = len(self.providers)  #We will try each provider at most once
         failed_providers: List[str] = []
-        
+        exhaustion_cycles = 0
+        max_exhaustion_cycles = 3  #We cap total-outage retries instead of looping forever
+
         while attempts < max_provider_attempts:
-            provider = None 
-            
+            provider = None
+
             async with self._lock:
                 provider = self._get_available_provider(task_type, exclude=failed_providers)
-                  
+
             if not provider:
-                logger.warning(f"[LLMRouter]: all providers are exhausted --- waiting 30s")
+                exhaustion_cycles += 1
+                if exhaustion_cycles > max_exhaustion_cycles:
+                    raise RuntimeError(
+                        f"[LLMRouter]: all providers remained unavailable after {max_exhaustion_cycles} retry cycles. Giving up."
+                    )
+                logger.warning(f"[LLMRouter]: all providers are exhausted --- waiting 30s (cycle {exhaustion_cycles}/{max_exhaustion_cycles})")
 
                 await asyncio.sleep(30)
                 #Reset the failed list after cooldown to allow retry
@@ -283,7 +296,20 @@ class LLMRouter:
                 base_url = self._openrouter_base, api_key = os.getenv("OPEN_ROUTER_API_KEY"), model = "nvidia/nemotron-3-ultra-550b-a55b:free",
                 system_prompt = system_prompt, user_message = user_message, temperature = temperature, max_tokens = max_tokens, timeout = PROVIDER_TIMEOUTS['openrouter'],
             )
-            
+
+        elif provider.name == "openrouter_glm":
+            return await self._call_openai_compatible(
+                base_url = self._openrouter_base, api_key = os.getenv("OPEN_ROUTER_API_KEY"), model = "z-ai/glm-5.2:free",
+                system_prompt = system_prompt, user_message = user_message, temperature = temperature, max_tokens = max_tokens, timeout = PROVIDER_TIMEOUTS['openrouter'],
+            )
+
+        elif provider.name == "openrouter_minimax":
+            return await self._call_openai_compatible(
+                base_url = self._openrouter_base, api_key = os.getenv("OPEN_ROUTER_API_KEY"), model = "minimax/minimax-m3:free",
+                system_prompt = system_prompt, user_message = user_message, temperature = temperature, max_tokens = max_tokens, timeout = PROVIDER_TIMEOUTS['openrouter'],
+            )
+
+
         
         raise ValueError(f"Unknown Provider: {provider.name}")
     
