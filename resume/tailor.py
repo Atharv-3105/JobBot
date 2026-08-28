@@ -61,6 +61,23 @@ def _strip_latex(text: str) -> str:
     text = re.sub(r'[{}]', '', text)                         # stray braces
     return re.sub(r'\s+', ' ', text).strip()
 
+_CATEGORY_LABEL_RE = re.compile(r'\[[^\]]*:\]')
+
+def _split_skill_candidates(phrase: str) -> List[str]:
+    """
+        Splits a (possibly diff-merged) added-phrase into individual skill
+        candidate tokens, so the whitelist check operates on one skill at a
+        time instead of a whole merged chunk. Without this, a single legitimate
+        skill sitting next to a category-label reshuffle (e.g. "Python
+        [Frameworks:] Flask") or a fabricated skill gets checked as one
+        indivisible unit and the whole thing is rejected even when every
+        individual skill in it is genuinely owned.
+    """
+    cleaned = _strip_latex(phrase)
+    #Split on a comma OR a "[Category:]" style label acting as a delimiter
+    parts = re.split(r',|' + _CATEGORY_LABEL_RE.pattern, cleaned)
+    return [p.strip() for p in parts if p.strip()]
+
 _NUMBER_WORD_RE = re.compile(
     r'\b(one|two|three|four|five|six|seven|eight|nine|ten|'
     r'eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty|forty|fifty|'
@@ -296,39 +313,49 @@ def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str,
                 return None, []
             
             tailored_block = tag_match.group(1).strip()
-            tailored_blocks_for_validation.append(tailored_block)
-            
+
             block_diff = _get_deterministic_diff(original_block, tailored_block)
-            changed_phrases = block_diff["added"] + block_diff["removed"]
-            
-            #Check for quantifier change 
-            if section_type == "experience" and any(_contains_quantifier(p) for p in changed_phrases):
+
+            #Check for quantifier change - only ADDED phrases count as a fabricated
+            #claim. A number that appears in "removed" just because the LLM reworded
+            #a bullet that already contained one (very common in real resumes) is not
+            #a fabrication - checking removed phrases here blocked almost any rephrase
+            #of a bullet that already had a genuine number in it.
+            if section_type == "experience" and any(_contains_quantifier(p) for p in block_diff["added"]):
                 logger.warning(
                     f"[TAILOR] Rejected experience-section change for job section_{i}: "
-                    f"quantifier change detected in {changed_phrases}. Reverting to original text."
+                    f"quantifier change detected in {block_diff['added']}. Reverting to original text."
                 )
-                
+
                 #Revert back to use the ORIGINAL block, not the tailored one.
                 modified_tex = modified_tex.replace(original_block, original_block, 1)
+                #The section was reverted, so what's ACTUALLY in modified_tex for
+                #this section is original_block - that's what retention validation
+                #must compare against, not the rejected tailored_block.
+                tailored_blocks_for_validation.append(original_block)
                 per_section_diff.append({
                     "section_type": section_type,
-                    "added": [], 
+                    "added": [],
                     "removed": [],
-                    "blocked": True, 
+                    "blocked": True,
                     "blocked_reason": "a numeric claim would have been altered"
                 })
-                continue 
-            
+                continue
+
             #Candidate's WHITE-LIST SKILLS Check
             if section_type == "skills":
-                disallowed = [p for p in block_diff["added"] if not skill_normalizer.is_allowed(p, allowed_skills)]
-                
+                candidate_tokens = []
+                for phrase in block_diff["added"]:
+                    candidate_tokens.extend(_split_skill_candidates(phrase))
+                disallowed = [tok for tok in candidate_tokens if not skill_normalizer.is_allowed(tok, allowed_skills)]
+
                 #If any disallowed skill added, fallback to using original text
                 if disallowed:
                     logger.warning(f"[TAILOR] Rejected skills-section change for job section_{i}: unverified skill(s) {disallowed} not in candidate's allowed_skills list. Reverting to original text")
-                    
+
                     modified_tex = modified_tex.replace(original_block, original_block, 1)
-                    
+                    #Section reverted - validate against what's actually kept (original)
+                    tailored_blocks_for_validation.append(original_block)
                     per_section_diff.append({
                         "section_type": section_type,
                         "added": [],
@@ -337,16 +364,17 @@ def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str,
                         "blocked_reason": f"unverified skill(s) requested by JD: {', '.join(disallowed)}",
                     })
                     continue
-            
+
             #We can apply this section's tailored content
             modified_tex = modified_tex.replace(original_block, tailored_block, 1)
+            tailored_blocks_for_validation.append(tailored_block)
             per_section_diff.append({
                 "section_type": section_type,
                 "added": block_diff["added"],
                 "removed": block_diff["removed"],
-                "blocked": False, 
+                "blocked": False,
             })
-            
+
         original_texts_only = [b[1] for b in original_blocks]
         if not _validate_tailored_blocks(original_texts_only, tailored_blocks_for_validation):
             logger.error("[TAILOR] LLM Hallucinated or deleted too much content, Rejecting changes.")
