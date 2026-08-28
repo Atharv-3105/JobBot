@@ -44,35 +44,41 @@ def test_provider_availability():
 
 def test_get_available_provider(mock_router):
     """Test LLM selection priorities based on task types."""
-    # Initially, groq is highest priority (1)
+    # Current TASK_PROVIDER_ORDERS["default"] = [openrouter, groq, gemini, cerebras]
+    prov = mock_router._get_available_provider("default")
+    assert prov.name == "openrouter"
+
+    # Mark openrouter rate limited, next should be groq (priority 2 for "default")
+    openrouter_prov = next(p for p in mock_router.providers if p.name == "openrouter")
+    openrouter_prov.mark_rate_limited(60)
     prov = mock_router._get_available_provider("default")
     assert prov.name == "groq"
-    
-    # Mark groq as rate limited, next should be gemini (priority 2)
+
+    # Mark groq rate limited too - "default" falls to gemini next (before cerebras)
     groq_prov = next(p for p in mock_router.providers if p.name == "groq")
     groq_prov.mark_rate_limited(60)
     prov = mock_router._get_available_provider("default")
     assert prov.name == "gemini"
-    
-    # Verify task-specific ordering for "tailoring" (gemini preferred over groq)
-    # Let's reset groq to available
-    groq_prov.status = ProviderStatus.AVAILABLE
-    groq_prov.rate_limit_until = 0.0
-    
+
+    # Verify task-specific ordering: TASK_PROVIDER_ORDERS["tailoring"] prioritizes
+    # cerebras over gemini (opposite of "default"), with openrouter+groq still down
     prov = mock_router._get_available_provider("tailoring")
-    # For tailoring, TASK_PROVIDER_ORDERS prioritizes gemini over groq
-    assert prov.name == "gemini"
+    assert prov.name == "cerebras"
 
 @pytest.mark.asyncio
 async def test_complete_success(mock_router):
     """Test LLM complete calls route and succeed."""
-    # Mock calls to Groq
-    mock_router._call_groq = AsyncMock(return_value="Mocked response from Groq")
-    
+    # Rate-limit openrouter so groq (next in "scoring" priority) is selected
+    openrouter_prov = next(p for p in mock_router.providers if p.name == "openrouter")
+    openrouter_prov.mark_rate_limited(60)
+
+    # Mock calls to Groq - _call_provider dispatch expects a (content, tokens_used) tuple
+    mock_router._call_groq = AsyncMock(return_value=("Mocked response from Groq", 42))
+
     response = await mock_router.complete("sys", "user", task_type="scoring")
     assert response == "Mocked response from Groq"
     mock_router._call_groq.assert_called_once_with("sys", "user", 0.1, 500)
-    
+
     # Verify provider usage was recorded
     groq_prov = next(p for p in mock_router.providers if p.name == "groq")
     assert groq_prov.requests_this_minute == 1
@@ -80,17 +86,21 @@ async def test_complete_success(mock_router):
 @pytest.mark.asyncio
 async def test_complete_failover(mock_router):
     """Test that a 429 rate limit triggers failover to the next provider."""
+    # Rate-limit openrouter so groq is the first one actually attempted
+    openrouter_prov = next(p for p in mock_router.providers if p.name == "openrouter")
+    openrouter_prov.mark_rate_limited(60)
+
     # Groq throws rate limit exception
     mock_router._call_groq = AsyncMock(side_effect=Exception("429 Rate Limit Exceeded"))
-    # Gemini succeeds
-    mock_router._call_gemini = AsyncMock(return_value="Mocked response from Gemini")
-    
+    # Gemini succeeds - _call_provider dispatch expects a (content, tokens_used) tuple
+    mock_router._call_gemini = AsyncMock(return_value=("Mocked response from Gemini", 42))
+
     response = await mock_router.complete("sys", "user", task_type="scoring")
     assert response == "Mocked response from Gemini"
-    
+
     groq_prov = next(p for p in mock_router.providers if p.name == "groq")
     gemini_prov = next(p for p in mock_router.providers if p.name == "gemini")
-    
+
     # Groq should be marked rate limited
     assert groq_prov.status == ProviderStatus.RATE_LIMITED
     # Gemini should have been used
@@ -98,15 +108,17 @@ async def test_complete_failover(mock_router):
 
 @pytest.mark.asyncio
 async def test_all_providers_exhausted(mock_router):
-    """Test behavior when all providers fail or throw errors."""
+    """Test behavior when all providers are unavailable for the entire test window."""
     for p in mock_router.providers:
         p.status = ProviderStatus.RATE_LIMITED
-        p.rate_limit_until = time.time() + 30.0
-        
+        #Far in the future so is_available()'s auto-recovery never fires during this test -
+        #the exhaustion-cycle cap (not accidental recovery) must be what ends the loop.
+        p.rate_limit_until = time.time() + 100000.0
+
     with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        # Since all providers are rate limited, complete should wait and retry
-        # Let's mock a short retry limit to exit quickly
-        with pytest.raises(RuntimeError, match="all retries exhausted"):
-            await mock_router.complete("sys", "user", max_retries=1)
-            
-        assert mock_sleep.call_count > 0
+        # All providers stay unavailable the whole time - complete() must give up
+        # after a bounded number of exhaustion cycles instead of looping forever.
+        with pytest.raises(RuntimeError, match="all providers remained unavailable"):
+            await mock_router.complete("sys", "user")
+
+        assert mock_sleep.call_count == 3  # 3 waited cycles before the 4th trips the cap and raises

@@ -85,11 +85,12 @@ async def test_concurrency_stress():
     num_workers = 3
     worker_tasks = []
     
-    # Patch job_queue, pipeline, and get_db inside bot.worker
+    # Patch job_queue and pipeline inside bot.worker. Note: bot/worker.py never
+    # imports get_db directly (DB access happens inside the mocked pipeline via
+    # mock_get_db_context() above), so there is nothing to patch for it here.
     with patch("bot.worker.job_queue", tq), \
-         patch("bot.worker.pipeline.ainvoke", side_effect=mock_pipeline_invoke), \
-         patch("bot.worker.get_db", side_effect=mock_get_db_context):
-         
+         patch("bot.worker.pipeline.ainvoke", side_effect=mock_pipeline_invoke):
+
         # Start worker loops
         for i in range(num_workers):
             task = asyncio.create_task(start_worker(worker_id=i+1))

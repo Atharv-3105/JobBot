@@ -1,0 +1,470 @@
+{
+  "records": [
+    {
+      "test_name": "fabricated_skill_gets_blocked",
+      "mode": "mock",
+      "profile_name": "narrow_junior",
+      "jd_label": "skills_gap",
+      "scenario": "fabricated_skill",
+      "provider": "mock",
+      "outcome": "pdf_generated",
+      "drop_reason": null,
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "synonym_of_owned_skill_is_allowed",
+      "mode": "mock",
+      "profile_name": "broad_senior",
+      "jd_label": "clean_match",
+      "scenario": "synonym_skill",
+      "provider": "mock",
+      "outcome": "pdf_generated",
+      "drop_reason": null,
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "quantifier_change_gets_blocked",
+      "mode": "mock",
+      "profile_name": "backend_focused",
+      "jd_label": "quantifier_bait",
+      "scenario": "quantifier_change",
+      "provider": "mock",
+      "outcome": "pdf_generated",
+      "drop_reason": null,
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "over_rewrite_fails_retention_check",
+      "mode": "mock",
+      "profile_name": "narrow_junior",
+      "jd_label": "clean_match",
+      "scenario": "over_rewrite",
+      "provider": "mock",
+      "outcome": "dropped",
+      "drop_reason": "retention_too_low",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "malformed_xml_falls_back_gracefully",
+      "mode": "mock",
+      "profile_name": "narrow_junior",
+      "jd_label": "clean_match",
+      "scenario": "malformed_xml",
+      "provider": "mock",
+      "outcome": "dropped",
+      "drop_reason": "xml_malformed",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "empty_llm_content_falls_back_gracefully",
+      "mode": "mock",
+      "profile_name": "narrow_junior",
+      "jd_label": "clean_match",
+      "scenario": "empty_content",
+      "provider": "mock",
+      "outcome": "dropped",
+      "drop_reason": "empty_content",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "latex_injection_blocked_end_to_end",
+      "mode": "mock",
+      "profile_name": "narrow_junior",
+      "jd_label": "clean_match",
+      "scenario": "latex_injection",
+      "provider": "mock",
+      "outcome": "dropped",
+      "drop_reason": "latex_injection_blocked",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "provider_exhausted_fails_fast_not_forever",
+      "mode": "mock",
+      "profile_name": "narrow_junior",
+      "jd_label": "clean_match",
+      "scenario": "provider_exhausted",
+      "provider": "mock",
+      "outcome": "dropped",
+      "drop_reason": "provider_exhausted",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "near_empty_profile_does_not_crash",
+      "mode": "mock",
+      "profile_name": "near_empty",
+      "jd_label": "skills_gap",
+      "scenario": "fabricated_skill",
+      "provider": "mock",
+      "outcome": "pdf_generated_or_dropped",
+      "drop_reason": null,
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "narrow_junior",
+      "jd_label": "clean_match",
+      "provider": "real (router-selected)",
+      "latency_ms": 5549,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "narrow_junior",
+      "jd_label": "skills_gap",
+      "provider": "real (router-selected)",
+      "latency_ms": 5678,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "narrow_junior",
+      "jd_label": "quantifier_bait",
+      "provider": "real (router-selected)",
+      "latency_ms": 7990,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "narrow_junior",
+      "jd_label": "prompt_injection",
+      "provider": "real (router-selected)",
+      "latency_ms": 30218,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "broad_senior",
+      "jd_label": "clean_match",
+      "provider": "real (router-selected)",
+      "latency_ms": 21079,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "broad_senior",
+      "jd_label": "skills_gap",
+      "provider": "real (router-selected)",
+      "latency_ms": 27976,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "broad_senior",
+      "jd_label": "quantifier_bait",
+      "provider": "real (router-selected)",
+      "latency_ms": 23008,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "broad_senior",
+      "jd_label": "prompt_injection",
+      "provider": "real (router-selected)",
+      "latency_ms": 25985,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "ml_focused",
+      "jd_label": "clean_match",
+      "provider": "real (router-selected)",
+      "latency_ms": 26758,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "ml_focused",
+      "jd_label": "skills_gap",
+      "provider": "real (router-selected)",
+      "latency_ms": 19255,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "ml_focused",
+      "jd_label": "quantifier_bait",
+      "provider": "real (router-selected)",
+      "latency_ms": 21749,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_before_fixes",
+      "mode": "real",
+      "profile_name": "ml_focused",
+      "jd_label": "prompt_injection",
+      "provider": "real (router-selected)",
+      "latency_ms": 25674,
+      "outcome": "dropped",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "before_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "narrow_junior",
+      "jd_label": "clean_match",
+      "provider": "real (router-selected)",
+      "latency_ms": 40219,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "narrow_junior",
+      "jd_label": "skills_gap",
+      "provider": "real (router-selected)",
+      "latency_ms": 14469,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "narrow_junior",
+      "jd_label": "quantifier_bait",
+      "provider": "real (router-selected)",
+      "latency_ms": 22413,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "narrow_junior",
+      "jd_label": "prompt_injection",
+      "provider": "real (router-selected)",
+      "latency_ms": 21285,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "broad_senior",
+      "jd_label": "clean_match",
+      "provider": "real (router-selected)",
+      "latency_ms": 11369,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "broad_senior",
+      "jd_label": "skills_gap",
+      "provider": "real (router-selected)",
+      "latency_ms": 13669,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "broad_senior",
+      "jd_label": "quantifier_bait",
+      "provider": "real (router-selected)",
+      "latency_ms": 12215,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "broad_senior",
+      "jd_label": "prompt_injection",
+      "provider": "real (router-selected)",
+      "latency_ms": 13240,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "ml_focused",
+      "jd_label": "clean_match",
+      "provider": "real (router-selected)",
+      "latency_ms": 12745,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "ml_focused",
+      "jd_label": "skills_gap",
+      "provider": "real (router-selected)",
+      "latency_ms": 11737,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "ml_focused",
+      "jd_label": "quantifier_bait",
+      "provider": "real (router-selected)",
+      "latency_ms": 14314,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    },
+    {
+      "test_name": "real_llm_matrix_after_fixes",
+      "mode": "real",
+      "profile_name": "ml_focused",
+      "jd_label": "prompt_injection",
+      "provider": "real (router-selected)",
+      "latency_ms": 12646,
+      "outcome": "pdf_generated",
+      "fabrication_leak": null,
+      "error": null,
+      "run": "after_fixes",
+      "timestamp": "2026-08-28T16:56:42.778325+00:00"
+    }
+  ],
+  "aggregates": {
+    "total_records": 33,
+    "outcomes": {
+      "pdf_generated": 15,
+      "dropped": 17,
+      "pdf_generated_or_dropped": 1
+    },
+    "drop_reasons": {
+      "retention_too_low": 1,
+      "xml_malformed": 1,
+      "empty_content": 1,
+      "latex_injection_blocked": 1,
+      "provider_exhausted": 1
+    },
+    "latency_overall": {
+      "count": 24,
+      "mean_ms": 18385,
+      "p50_ms": 16862.0,
+      "p95_ms": 29881.7
+    },
+    "latency_by_provider": {
+      "real (router-selected)": {
+        "count": 24,
+        "mean_ms": 18385,
+        "p50_ms": 16862.0,
+        "p95_ms": 29881.7
+      }
+    },
+    "profile_jd_outcome_grid": {
+      "narrow_junior": {
+        "skills_gap": "pdf_generated",
+        "clean_match": "pdf_generated",
+        "quantifier_bait": "pdf_generated",
+        "prompt_injection": "pdf_generated"
+      },
+      "broad_senior": {
+        "clean_match": "pdf_generated",
+        "skills_gap": "pdf_generated",
+        "quantifier_bait": "pdf_generated",
+        "prompt_injection": "pdf_generated"
+      },
+      "backend_focused": {
+        "quantifier_bait": "pdf_generated"
+      },
+      "near_empty": {
+        "skills_gap": "pdf_generated_or_dropped"
+      },
+      "ml_focused": {
+        "clean_match": "pdf_generated",
+        "skills_gap": "pdf_generated",
+        "quantifier_bait": "pdf_generated",
+        "prompt_injection": "pdf_generated"
+      }
+    }
+  }
+}
