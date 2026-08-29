@@ -220,8 +220,11 @@ async def log_node(state: AgentState) -> dict:
             strengths = ', '.join(sj.strengths[:2]) if sj.strengths else "None"
             report += f"Match: {sj.match_percentage}% | Strengths: {strengths}\n"
 
+            if sj.gaps:
+                report += f"Gaps: {', '.join(sj.gaps[:3])}\n"
+
     else:
-        report += "\n❌ No jobs scored high enough (A/B) to tailor resumes for.\n"
+        report += "\n❌ No jobs scored high enough (A/B) this time. Try a broader keyword, or check back later.\n"
 
     return {"final_report": report}
 

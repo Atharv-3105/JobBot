@@ -26,32 +26,52 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
     with get_db() as db:
         existing_user = get_user(db, telegram_id)
         if existing_user:
-            await update.message.reply_text("You already have a profile set up. Use `/profile` to view it, or `/search <keyword>` find jobs. \n\n To update your profile, use `/update` (coming soon)", parse_mode='Markdown')
+            await update.message.reply_text(
+                "Welcome back! You're already set up — use `/search <keyword>` to find and tailor jobs, "
+                "`/stats` to see how things are going, or `/profile` to view or edit your profile.",
+                parse_mode='Markdown'
+            )
             return ConversationHandler.END
-    
-    await update.message.reply_text("Hello, Welcome to JobBot! Let's setup your profile.\n\nWhat is  your **Name**?",parse_mode="Markdown")
+
+    await update.message.reply_text(
+        "Hey! 👋 I'm JobBot — I crawl job boards, score listings against your profile, "
+        "and tailor your resume for the ones worth applying to.\n\n"
+        "Let's get you set up, takes about 2 minutes. First, what's your **name**?",
+        parse_mode="Markdown"
+    )
     logger.info("[BOT-Onboarding] Start Command ended")
     return NAME
 
 async def get_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logger.info("[BOT-Onboarding] Getting Name")
-    context.user_data['name'] = update.message.text 
-    await update.message.reply_text("Great! What are your **Target Roles**? (comma-separated, e.g., Backend Engineer, ML Engineer)", parse_mode='Markdown')
+    context.user_data['name'] = update.message.text
+    await update.message.reply_text(
+        f"Nice to meet you, {context.user_data['name']}! What roles are you targeting? "
+        "(comma-separated, e.g., Backend Engineer, ML Engineer)",
+        parse_mode='Markdown'
+    )
     logger.info("[BOT-Onboarding] Got Name")
-    return ROLES 
+    return ROLES
 
 async def get_roles(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     logger.info("[BOT-Onboarding] Getting Roles")
     roles = [r.strip() for r in update.message.text.split(',')]
     context.user_data['target_roles'] = roles
     
-    await update.message.reply_text("Now, let's add your skills. We categorize them to help our AI score jobs better.\n\nWhat are your **CORE** skills? (Your daily drivers, expert level. Comma-separated, e.g., Python, Go, FastAPI)", parse_mode='Markdown')
+    await update.message.reply_text(
+        "Now let's talk skills — I'll use these to score jobs and know what's fair game when tailoring your resume.\n\n"
+        "What are your **core** skills? (Your daily drivers, expert level. Comma-separated, e.g., Python, Go, FastAPI)",
+        parse_mode='Markdown'
+    )
     return SKILLS_CORE
 
 async def get_skills_core(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     core = [s.strip() for s in update.message.text.split(',')]
     context.user_data.setdefault('skills', {})['core'] = core
-    await update.message.reply_text("Got it. What are your **PRIMARY** skills? (Strong proficiency, used frequently. Comma-separated, or type 'skip')", parse_mode='Markdown')
+    await update.message.reply_text(
+        "Got it. What are your **primary** skills? (Strong proficiency, used frequently. Comma-separated, or reply `skip`)",
+        parse_mode='Markdown'
+    )
     return SKILLS_PRIMARY
 
 
@@ -67,13 +87,13 @@ async def get_skills_primary(update: Update, context: ContextTypes.DEFAULT_TYPE)
     context.user_data['skills']['basic'] = []
 
     await update.message.reply_text(
-        "A few more question that will help me in building your profile for correct tailoring:"
+        "A few more categories that often don't show up on a resume in so many words — "
         "reply with anything that applies, comma-separated (or reply `skip`):\n\n"
         "- Cloud platforms you've personally used (e.g. AWS, GCP, Azure)\n"
         "- Container/orchestration tools (e.g. Docker, Kubernetes)\n"
         "- CI/CD tools (e.g. GitHub Actions, Jenkins)\n"
         "- Databases/message queues (e.g. Kafka, RabbitMQ)\n\n"
-        "Only list things you've actually used yourself - we'll never add anything you don't type here.",
+        "Only list things you've actually used yourself — I'll never add anything you didn't type here.",
         parse_mode='Markdown'
     )
     return ADDITIONAL_QUESTIONS
@@ -90,18 +110,24 @@ async def get_enrichment(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 context.user_data['skills']['secondary'].append(item)
                 existing.add(item.lower())
     
-    await update.message.reply_text("Finally, please upload your base-resume.tex file.\n Send it as a document")
+    await update.message.reply_text(
+        "Last step! Upload your base resume as a `.tex` file — just send it as a document and I'll take it from there.",
+        parse_mode='Markdown'
+    )
     return RESUME
 
 
 async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    
+
     logger.info("[BOT-Onboarding] Onboarding User")
-    #Check if the updated file is .tex or not 
+    #Check if the updated file is .tex or not
     if not update.message.document or not update.message.document.file_name.endswith('.tex'):
-        
-        await update.message.reply_text("That's not a .tex file, Please upload your LaTeX resume.")
-        return RESUME 
+
+        await update.message.reply_text(
+            "That doesn't look like a `.tex` file — please upload your LaTeX resume as a document.",
+            parse_mode='Markdown'
+        )
+        return RESUME
     
     telegram_id = update.effective_user.id
     user_dir = f"data/users/{telegram_id}"
@@ -115,8 +141,8 @@ async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     
     #------Grounded Skill Extraction from the FULL resume text---------
     #Recovers tools mentioned in full-resume
-    await update.message.reply_text("Scanning your resume for skills mentioned outside thte SKILLS section")
-    
+    await update.message.reply_text("Got it! One sec while I scan for skills mentioned outside your Skills section (Experience, Projects, etc.)...")
+
     with open(resume_path, "r", encoding = "utf-8") as f:
         tex_content = f.read()
     
@@ -133,23 +159,27 @@ async def get_resume(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["candidate_skills"] = new_additions
     
     listing = "\n".join(f"{i+1}. {s}" for i, s in enumerate(new_additions))
-    await update.message.reply_text("We found these additional skills mentioned in your resume (Experience/Projects sections):\n\n"
-                                    f"{listing}\n\n"
-                                    "Reply with the numbers of any that are WRONG or you don't want included "
-                                    "(comma-separated, eg: 2,7), or reply 'confirm' to accept the full list.",parse_mode='Markdown')
+    await update.message.reply_text(
+        "I found a few more skills mentioned in your resume (Experience/Projects sections) that you didn't list earlier:\n\n"
+        f"{listing}\n\n"
+        "Reply with the numbers of any that don't belong (comma-separated, e.g. `2, 7`), "
+        "or reply `confirm` to keep them all.",
+        parse_mode='Markdown'
+    )
     return SKILLS_CONFIRM
-    
+
 async def confirm_skills(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip().lower()
     candidates = context.user_data.get('candidate_skills', [])
-    
+
     if text != 'confirm':
         try:
             remove_indices = {int(n.strip()) - 1 for n in text.split(',') if n.strip()}
             candidates = [s for i, s in enumerate(candidates) if i not in remove_indices]
         except ValueError:
             await update.message.reply_text(
-                "Couldn't parse that. Reply with comma-separated numbers to remove(eg. 2,7), or `confirm` to accept all."
+                "Couldn't parse that — reply with comma-separated numbers to remove (e.g. `2, 7`), or `confirm` to accept all.",
+                parse_mode='Markdown'
             )
             return SKILLS_CONFIRM
         
@@ -164,18 +194,20 @@ async def _finalize_profile(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     with get_db() as db:
         save_user(db, telegram_id, context.user_data['name'], context.user_data['target_roles'], context.user_data['skills'], context.user_data['resume_path'])
         
-    await update.message.reply_text("**Profile Saved!**\n\n"
-                                    "You can now use `/search command` to find and tailor jobs. \n"
-                                    "Use `/profile` to view your current settings",
-                                    parse_mode = 'Markdown')
-    
+    name = context.user_data.get('name', 'there')
+    await update.message.reply_text(
+        f"**You're all set, {name}!** 🎉\n\n"
+        "Use `/search <keyword>` to find and tailor jobs, `/profile` to review what I just saved, "
+        "or `/help` to see everything I can do. Good luck out there!",
+        parse_mode = 'Markdown')
+
     return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    
-    await update.message.reply_text("Onboarding Cancelled..")
-    return ConversationHandler.END 
+
+    await update.message.reply_text("No problem — onboarding cancelled. Whenever you're ready, just run `/start` again.", parse_mode='Markdown')
+    return ConversationHandler.END
 
 #Export the Conversation Handler to be added to the main bot
 onboarding_handler = ConversationHandler(

@@ -28,7 +28,7 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
         if not is_allowed:
             await update.message.reply_text(
                 f"⏳ **Rate Limit Reached**\n\n"
-                f"Resets in: **{cooldown}**",
+                f"You've hit the limit for this one — resets in **{cooldown}**.",
                 parse_mode='Markdown'
             )
             return None, None, None, None
@@ -51,7 +51,7 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
         }
            
             
-    await update.message.reply_text("🔍 Analyzing input....", parse_mode = 'Markdown')
+    await update.message.reply_text("🔍 Got it, taking a look...", parse_mode = 'Markdown')
     title, company, jd_text, error = await process_job_input(user_input)
     
     if error:
@@ -61,7 +61,7 @@ async def _prepare_manual_job(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     #Having a unique url is important so we replicate this by using UUID
     unique_url = f"manual_{uuid.uuid4().hex[:8]}"
-    dummy_job = JobListing(title = title, company = company, url = unique_url, portal = "manual", portal_job_id="manual_01")
+    dummy_job = JobListing(title = title, company = company, url = unique_url, portal = "manual", jd_text = jd_text, portal_job_id="manual_01")
     
     #Save the job to DB so it gets an integer ID for the tailor node
     with get_db() as db:
@@ -112,7 +112,7 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     #-----Check for duplicate------------
     if job_queue.is_duplicate(dedup_key):
-        await update.message.reply_text(f"⚠️ You already have a scoring task in progess.\n\n Use `/cancel` to stop it, or wait for it to finish.", parse_mode = 'Markdown')                     
+        await update.message.reply_text(f"⚠️ You already have a scoring task in progress.\n\nUse `/cancel` to stop it, or wait for it to finish.", parse_mode = 'Markdown')
         return 
     
     #------ Create the Task for the Worker Queue----------
@@ -159,7 +159,7 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db_job = get_job_by_url(db, telegram_id, unique_url) 
         job_id = db_job.id if db_job else None 
         
-    dummy_scored = ScoredJob(job = dummy_job, db_job_id = job_id, score = "A", match_percentage = 100, strengths = ["Direct Input"], gaps = [], recommendation = "Tailor immediately")
+    dummy_scored = ScoredJob(job = dummy_job, db_job_id = job_id, score = "A", match_percentage = 100, strengths = [], gaps = [], recommendation = "Tailor immediately")
     
     initial_state = {
         "user_id": telegram_id,

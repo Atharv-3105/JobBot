@@ -42,7 +42,7 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_allowed:
             await update.message.reply_text(
                 f"⏳ **Rate Limit Reached**\n\n"
-                f"Resets in: **{cooldown}**",
+                f"You've hit the limit for this one — resets in **{cooldown}**.",
                 parse_mode='Markdown'
             )
             return
@@ -114,9 +114,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
       await update.message.reply_text(
         "🤖 **JobBot Commands**\n\n"
         "/start - Set up your profile\n"
+        "/profile - View your profile, or `/profile edit` to update it\n"
         "/search `<keyword>` - Find and tailor jobs\n"
         "/score `<url_or_text>` - Score a specific JD\n"
         "/tailor `<url_or_text>` - Tailor resume for a specific JD\n"
+        "/stats - See your funnel stats\n"
         "/cancel - Cancel your running tasks\n"
         "/help - Show this message",
         parse_mode='Markdown'

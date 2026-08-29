@@ -10,6 +10,7 @@ from bot.handlers.agent_control import score_command, tailor_command
 from bot.handlers.stats import stats_command
 from bot.handlers.cancel import cancel_command
 from bot.handlers.admin import admin_stats_command
+from bot.handlers.profile import profile_handler
 from bot.worker import start_worker, job_queue
 from dotenv import load_dotenv
 import os
@@ -108,6 +109,7 @@ def main():
     
     #Register handlers
     application.add_handler(onboarding_handler)
+    application.add_handler(profile_handler)
     application.add_handler(CommandHandler("search", search_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("score", score_command))

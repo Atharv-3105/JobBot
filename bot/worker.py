@@ -267,9 +267,9 @@ async def start_worker(worker_id: int):
             except Exception as e:
                 logger.error(f"[QUEUE] Worker_{worker_id} Task failed for user {task.user_id}: {e}")
                 
-                #Notify the User of the failure
+                #Notify the User of the failure (no raw exception details - internals stay in the logs)
                 try:
-                    await task.bot.send_message(chat_id = task.chat_id, text = f"⚠️ Processing failed: {str(e)[:100]}\n\nPlease try again in a minute.", parse_mode = 'Markdown')
+                    await task.bot.send_message(chat_id = task.chat_id, text = "⚠️ Something went wrong on my end while processing that. Please try again in a minute.", parse_mode = 'Markdown')
                 except TelegramError as notify_err:
                     logger.error(f"[QUEUE] Failed to notify user {task.user_id}: {notify_err}")
             
@@ -312,7 +312,7 @@ async def _send_result(task: BotTask, final_state: dict):
             #File existence check 
             if not os.path.exists(pdf_path):
                 logger.error(f"[QUEUE] PDF file not found at {pdf_path} for user {task.user_id}")
-                await task.bot.send_message(chat_id=task.chat_id, text = f" ⚠️ Error: The tailored PDF for {job['company']} could not be generated.", parse_mode = 'Markdown')
+                await task.bot.send_message(chat_id=task.chat_id, text = f"⚠️ The tailored PDF for {job['company']} couldn't be generated — sorry about that. Please try again.", parse_mode = 'Markdown')
                 continue
             
             try:
@@ -326,5 +326,17 @@ async def _send_result(task: BotTask, final_state: dict):
                 logger.error(f"[QUEUE] Unexpected error sending PDF {pdf_path} : {e}")
                 
     else:
-        await task.bot.send_message(chat_id = task.chat_id, text = "No jobs scored high enough (A/B) to tailor resumes for.", parse_mode = 'Markdown')
+        #tailored_jobs can be empty for two different reasons - don't conflate them.
+        scored_ab = any(sj.score in ("A", "B") for sj in final_state.get("scored_jobs", []))
+        if scored_ab:
+            #A/B jobs existed, but tailoring itself didn't succeed (e.g. the LLM's
+            #proposed changes failed a validation guard) - the final_report above
+            #already explains this via Pipeline Stats, no separate message needed here.
+            pass
+        else:
+            await task.bot.send_message(
+                chat_id = task.chat_id,
+                text = "No jobs scored high enough (A/B) to tailor a resume for this time. Try a broader keyword, or check `/stats` to see what's been found so far.",
+                parse_mode = 'Markdown'
+            )
                 

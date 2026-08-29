@@ -14,7 +14,16 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID"))
+_admin_user_id_str = os.getenv("ADMIN_USER_ID")
+if _admin_user_id_str is None:
+    logger.warning("[Admin] ADMIN_USER_ID is not set - /admin_stats will be unavailable to everyone")
+    ADMIN_USER_ID = None
+else:
+    try:
+        ADMIN_USER_ID = int(_admin_user_id_str)
+    except ValueError:
+        logger.warning(f"[Admin] ADMIN_USER_ID='{_admin_user_id_str}' is not a valid integer - /admin_stats will be unavailable to everyone")
+        ADMIN_USER_ID = None
 
 async def admin_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """ 
@@ -38,7 +47,7 @@ async def admin_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         
     #LLMRouter Stats
     router_status = llm_router.get_status()
-    router_text = "\n".join([f"{name.upper()}: {data['status']} ({data['rpm_used']} / {data['rpm_limit']} RPM)" for name, data in router_status.items()])
+    router_text = "\n".join([f"{name.replace('_', ' ').upper()}: {data['status'].replace('_', ' ')} ({data['rpm_used']} / {data['rpm_limit']} RPM)" for name, data in router_status.items()])
     
     #Queue Stats
     queue_info = job_queue.get_info(0)

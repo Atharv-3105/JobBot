@@ -136,6 +136,69 @@ Format:
 """
     
     
+def _parse_score_array(content: str):
+    """
+        Shared JSON-repair + array-unwrap logic, used by both the validate_fn
+        (pre-acceptance check) and the real parse after a response is accepted.
+    """
+    parsed = repair_json(content, return_objects = True)
+
+    if not isinstance(parsed, list):
+        #Sometimes LLM wraps the list in a dict like {"jobs": [...]}
+        if isinstance(parsed, dict):
+            for key in parsed:
+                if isinstance(parsed[key], list):
+                    parsed = parsed[key]
+                    break
+            else:
+                raise ValueError("LLM Did Not return a JSON array")
+        else:
+            raise ValueError("LLM Did Not return a JSON array")
+
+    return parsed
+
+
+def _make_score_validator(expected_job_ids: set):
+    """
+        Builds a validate_fn for llm_router.complete(): rejects a response BEFORE
+        it's accepted if it's structurally incomplete, schema-valid-but-empty, or
+        matches a known LLM-flakiness signature (e.g. claiming no JD was provided
+        when one clearly was sent) - so the router fails over to a different
+        provider automatically instead of us silently accepting a degenerate reply.
+    """
+    def _validate(content: str) -> bool:
+        try:
+            parsed = _parse_score_array(content)
+        except Exception:
+            return False
+
+        score_map = {item.get("job_id"): item for item in parsed if isinstance(item, dict)}
+
+        for job_id in expected_job_ids:
+            entry = score_map.get(job_id)
+            if not entry or "score" not in entry or "match_percentage" not in entry:
+                return False
+
+            match_pct = entry.get("match_percentage", 0)
+            strengths = entry.get("strengths", [])
+            gaps = entry.get("gaps", [])
+
+            #Schema-valid but empty - every genuine 0% match we've seen still lists gaps
+            if match_pct == 0 and not strengths and not gaps:
+                return False
+
+            #Known hallucination signature: a jd_excerpt is always included when jd_text
+            #is non-empty, so a claim that none was provided means the model is confused,
+            #not that the input was actually missing.
+            gaps_text = " ".join(str(g) for g in gaps).lower()
+            if "no job description" in gaps_text or "job description" in gaps_text and "not provided" in gaps_text:
+                return False
+
+        return True
+
+    return _validate
+
+
 async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) -> List[ScoredJob]:
     """ 
         This function does Batch-Scoring(max-3 jobs per call)
@@ -177,37 +240,47 @@ async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) 
     """
     
     
+    expected_job_ids = {job.portal_job_id for job in jobs}
+
     try:
-        #Call Router
+        #Call Router - validate_fn rejects a structurally-incomplete or known-flaky
+        #response BEFORE we accept it, so the router fails over to a different
+        #provider automatically instead of us silently accepting a degenerate reply.
         raw_content = await llm_router.complete(
             system_prompt= SYSTEM_PROMPT,
             user_message = user_message,
             temperature = 0.1,
-            max_tokens=2000, task_type = "scoring"
+            max_tokens=2000, task_type = "scoring",
+            validate_fn = _make_score_validator(expected_job_ids),
         )
-        
-        #Fix-the response for accurate JSON
-        fixed_content = repair_json(raw_content, return_objects = True)
-        
-        if not isinstance(fixed_content, list):
-            #Sometimes LLM wraps the list in a dict like {"jobs": [...]}
-            if isinstance(fixed_content, dict):
-                for key in fixed_content:
-                    if isinstance(fixed_content[key], list):
-                        fixed_content = fixed_content[key]
-                        break 
-                    
-            else:
-                raise ValueError("LLM Did Not return a JSON array")
-            
-        
+
+        fixed_content = _parse_score_array(raw_content)
+
+
         #Map scores back to JobListing objects
         scored_jobs = []
         score_map = {item.get("job_id"): item for item in fixed_content}
         
         for job in jobs:
             score_data = score_map.get(job.portal_job_id)
-            if score_data:
+            #Require the load-bearing fields to actually be present, not just that the
+            #job_id matched - a truncated/malformed per-job entry (e.g. only "job_id"
+            #survived repair_json) must not silently masquerade as a real "C/0%" score.
+            is_complete = score_data is not None and "score" in score_data and "match_percentage" in score_data
+
+            if is_complete:
+                match_pct = score_data.get("match_percentage", 0)
+                strengths = score_data.get("strengths", [])
+                gaps = score_data.get("gaps", [])
+                #Content-quality check, not just structural: every genuine 0% match we've
+                #observed still lists concrete gaps explaining why. A response claiming 0%
+                #with NEITHER strengths NOR gaps is more likely a low-effort/degenerate
+                #generation (schema-valid but empty) than a real, reasoned evaluation -
+                #key-presence alone can't catch this, since the shape is technically correct.
+                if match_pct == 0 and not strengths and not gaps:
+                    is_complete = False
+
+            if is_complete:
                 scored_jobs.append(ScoredJob(
                     job = job,
                     db_job_id=None,
@@ -218,14 +291,17 @@ async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) 
                     recommendation = score_data.get("recommendation", "")
                 ))
             else:
-                #Fallback if LLM missed a job in the batch
+                #Fallback if the LLM missed this job in the batch, returned an incomplete/
+                #malformed entry for it, or returned a suspect empty-content response -
+                #flagged honestly, not disguised as a real score.
+                logger.warning(f"[SCORER] Incomplete, malformed, or suspect score data for job_id={job.portal_job_id}: {score_data}")
                 scored_jobs.append(ScoredJob(
                     job = job,
                     db_job_id= None,
                     score = "C",
                     match_percentage = 50,
                     strengths = [],
-                    gaps = ["LLM Parsing Error"],
+                    gaps = ["LLM response was incomplete, malformed, or empty for this job - please try again"],
                     recommendation = "Review manually",
                 ))
                 

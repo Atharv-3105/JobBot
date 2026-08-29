@@ -74,9 +74,19 @@ def _split_skill_candidates(phrase: str) -> List[str]:
         individual skill in it is genuinely owned.
     """
     cleaned = _strip_latex(phrase)
-    #Split on a comma OR a "[Category:]" style label acting as a delimiter
+    #Split on a comma OR a complete "[Category:]" style label acting as a delimiter
     parts = re.split(r',|' + _CATEGORY_LABEL_RE.pattern, cleaned)
-    return [p.strip() for p in parts if p.strip()]
+    #A category label can get split across two separate diff-added phrases (each
+    #processed independently here), leaving a DANGLING half-bracket fused onto a
+    #real skill name (e.g. "HTML [Backend Development" or "Tooling:] LangChain").
+    #Strip those dangling fragments too, not just complete pairs, so the skill
+    #name underneath isn't wrongly rejected as unrecognizable.
+    cleaned_parts = []
+    for p in parts:
+        p = re.sub(r'\[[^\]]*$', '', p)   #unclosed "[..." trailing off the end
+        p = re.sub(r'^[^\[]*:\]', '', p)  #dangling "...:]" with no matching "[" before it
+        cleaned_parts.append(p.strip())
+    return [p for p in cleaned_parts if p]
 
 _NUMBER_WORD_RE = re.compile(
     r'\b(one|two|three|four|five|six|seven|eight|nine|ten|'
