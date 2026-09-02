@@ -82,7 +82,12 @@ async def score_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: `/score <job_url>` or `/score <paste job description>`", parse_mode = 'Markdown')
         return 
     
-    user_input = " ".join(context.args)
+    #Use the raw message text (minus the leading command token) instead of
+    #re-joining context.args - Telegram tokenizes args by whitespace (newlines
+    #included), so " ".join(context.args) permanently flattens every line break
+    #before the title-extraction heuristic (which relies on real newlines to
+    #find "the first line") ever sees the text.
+    user_input = update.message.text.split(None, 1)[1] if len(update.message.text.split(None, 1)) > 1 else ""
     telegram_id = update.effective_user.id
     
     user, profile, dummy_job, unique_url = await _prepare_manual_job(update, context, user_input, "score")
@@ -146,7 +151,12 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: `/tailor <job_url>` or `/tailor <paste job description>`", parse_mode = 'Markdown')
         return 
     
-    user_input = " ".join(context.args)
+    #Use the raw message text (minus the leading command token) instead of
+    #re-joining context.args - Telegram tokenizes args by whitespace (newlines
+    #included), so " ".join(context.args) permanently flattens every line break
+    #before the title-extraction heuristic (which relies on real newlines to
+    #find "the first line") ever sees the text.
+    user_input = update.message.text.split(None, 1)[1] if len(update.message.text.split(None, 1)) > 1 else ""
     telegram_id = update.effective_user.id 
     
     user, profile, dummy_job, unique_url = await _prepare_manual_job(update, context, user_input, "tailor")
