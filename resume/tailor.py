@@ -48,13 +48,17 @@ STRICT RULES:
 """
 
 #----------------LaTeX stripping (shared logic - unescape + strip commands)---------------
+_DASHES = dict.fromkeys(map(ord, "\u2010\u2011\u2012\u2013\u2212"), "-")
+RETENTION_MIN = 0.6 
+
 def _strip_latex(text: str) -> str:
     """ 
         Function which removes LaTeX commands/escapes, returns plain readable text
     """
     if not text:
         return ""
-    
+    #the model sometimes emit non-breaking hyphens, which can hinder the diff added and removed phrases check
+    text = text.translate(_DASHES)
     text = re.sub(r'\\([&%$#_{}~^])', r'\1', text)          # unescape \& \% etc.
     text = re.sub(r'\\[a-zA-Z*]+\{([^}]*)\}', r'\1', text)   # \textbf{X} -> X
     text = re.sub(r'\\[a-zA-Z*]+', '', text)                 # remaining bare commands
@@ -294,6 +298,26 @@ async def _call_llm_for_tailoring(job_title: str, company: str, jd_text: str, se
     except Exception as e:
         logger.error(f"[TAILOR] LLM Tailoring failed or validation failed: {e}. Falling back to original resume.")
         return None
+  
+
+def _retention_rate(original: str, tailored: str) -> float:
+    orig_words = set(re.findall(r'[a-zA-Z0-9+#]+', _strip_latex(original).lower()))
+    if not orig_words:
+        return 1.0 
+    
+    tailored_words = set(re.findall(r'[a-zA-Z0-9+#]+', _strip_latex(tailored).lower()))
+    return len(orig_words & tailored_words) / len(orig_words)
+
+def _blocked_entry(section_type: str, block_diff: dict, reason: str) -> dict:
+    return {
+        "section_type": section_type,
+        "added": [],
+        "removed": [],
+        "blocked": True,
+        "blocked_reason": reason,
+        "proposed_added": block_diff["added"],
+        "proposed_removed": block_diff["removed"],
+    }
     
 #------------------------Injection + Section-Aware Validation-----------------------    
 def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str, str]], llm_response: str, allowed_skills: List[str]) -> Tuple[Optional[str], List[dict]]:
@@ -311,7 +335,6 @@ def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str,
     
     try:
         modified_tex = original_tex 
-        tailored_blocks_for_validation = []
         per_section_diff: List[dict] = []
         for i, (section_type, original_block) in enumerate(original_blocks):
             #Extract the tailored block from the LLM's XML response
@@ -337,12 +360,6 @@ def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str,
                     f"quantifier change detected in {block_diff['added']}. Reverting to original text."
                 )
 
-                #Revert back to use the ORIGINAL block, not the tailored one.
-                modified_tex = modified_tex.replace(original_block, original_block, 1)
-                #The section was reverted, so what's ACTUALLY in modified_tex for
-                #this section is original_block - that's what retention validation
-                #must compare against, not the rejected tailored_block.
-                tailored_blocks_for_validation.append(original_block)
                 per_section_diff.append({
                     "section_type": section_type,
                     "added": [],
@@ -362,10 +379,6 @@ def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str,
                 #If any disallowed skill added, fallback to using original text
                 if disallowed:
                     logger.warning(f"[TAILOR] Rejected skills-section change for job section_{i}: unverified skill(s) {disallowed} not in candidate's allowed_skills list. Reverting to original text")
-
-                    modified_tex = modified_tex.replace(original_block, original_block, 1)
-                    #Section reverted - validate against what's actually kept (original)
-                    tailored_blocks_for_validation.append(original_block)
                     per_section_diff.append({
                         "section_type": section_type,
                         "added": [],
@@ -374,7 +387,15 @@ def _inject_tailored_content(original_tex: str, original_blocks: List[Tuple[str,
                         "blocked_reason": f"unverified skill(s) requested by JD: {', '.join(disallowed)}",
                     })
                     continue
-
+            
+            #Retention Rate GUARD
+            retention = _retention_rate(original_block, tailored_block)
+            if retention < RETENTION_MIN:
+                logger.warning(f"[TAILOR] Rejected {section_type}-section change for section_{i}: retention {retention:.2f} < {RETENTION_MIN}. Reverting to original text")
+                per_section_diff.append(
+                    _blocked_entry(section_type, block_diff, f"the rewrite kept only {retention:.0%} of your original wording ({RETENTION_MIN:.0%} required)")
+                )
+                
             #We can apply this section's tailored content
             modified_tex = modified_tex.replace(original_block, tailored_block, 1)
             tailored_blocks_for_validation.append(tailored_block)

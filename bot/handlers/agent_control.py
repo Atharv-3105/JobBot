@@ -169,7 +169,7 @@ async def tailor_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db_job = get_job_by_url(db, telegram_id, unique_url) 
         job_id = db_job.id if db_job else None 
         
-    dummy_scored = ScoredJob(job = dummy_job, db_job_id = job_id, score = "A", match_percentage = 100, strengths = [], gaps = [], recommendation = "Tailor immediately")
+    dummy_scored = ScoredJob(job = dummy_job, db_job_id = job_id, score = "N/A", match_percentage = 0, strengths = [], gaps = [], recommendation = "", scored = False)
     
     initial_state = {
         "user_id": telegram_id,

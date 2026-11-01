@@ -21,6 +21,7 @@ class ScoredJob:
     strengths: List[str]
     gaps: List[str]
     recommendation: str 
+    scored: bool = True  #false for /tailor, which skips scoring
     
 
 #======================Pre-Filtering & Extraction=====================
@@ -310,7 +311,7 @@ async def score_batch_with_llm(jobs: List[JobListing], profile: Dict[str, Any]) 
     except Exception as e:
         logger.error(f"[SCORER] LLM Scoring failed across all providers: {e}")
         #We return neutral scores so the Pipeline doesn't crash
-        return [ScoredJob(job = j, score = "C", match_percentage=50, strengths = [], gaps = [str(e)], recommendation="Error") for j in jobs]
+        return [ScoredJob(job = j, db_job_id = None, score = "C", match_percentage=50, strengths = [], gaps = [str(e)], recommendation="Error") for j in jobs]
     
 
 async def score_listing(jobs: List[JobListing], profile: Dict[str, Any], user_id: int = None, mode: str = "search") -> List[ScoredJob]:

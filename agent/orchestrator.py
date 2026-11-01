@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph, START, END
 from agent.state import AgentState
 from portals import load_crawlers, search_all
 from agent.nodes.scorer import score_listing
-from resume.tailor import tailor  
+from resume.tailor import tailor_detailed
 
 
 logger = logging.getLogger(__name__)
@@ -90,6 +90,7 @@ async def tailor_node(state: AgentState) -> dict:
         
     logger.info(f"[TAILOR] Tailoring resume for {len(state['scored_jobs'])} jobs...")
     tailored_results = []
+    reports = []
     
     #Load User's base-resume.tex path
     #This will be updated to dynamic per-user path
@@ -109,7 +110,7 @@ async def tailor_node(state: AgentState) -> dict:
             logger.error(f"Cannot tailor job without DB ID: {sj.job.url}")
             continue 
                
-        tex_path, pdf_path, diff_summary = await tailor(base_tex_path=base_tex_path,
+        result = await tailor_detailed(base_tex_path=base_tex_path,
                                           jd_text = sj.job.jd_text,
                                           job_title = sj.job.title,
                                           company = sj.job.company,
@@ -119,7 +120,7 @@ async def tailor_node(state: AgentState) -> dict:
         
         logger.info(f"[DEBUG DIFF] received diff summary from tailor Node: {diff_summary}")
         
-        if pdf_path:
+        if result.pdf_path:
             tailored_results.append({
                 "company": sj.job.company,
                 "title":   sj.job.title,
@@ -128,23 +129,39 @@ async def tailor_node(state: AgentState) -> dict:
                 "strengths": sj.strengths[:4] if sj.strengths else [],
                 "gaps": sj.gaps[:4] if sj.gaps else [],
                 "recommendation": sj.recommendation,
-                "diff_summary": diff_summary,
-                "pdf_path": pdf_path
+                "diff_summary": result.diff_summary,
+                "pdf_path": result.pdf_path,
             })
         
         #Rate-Limits Protection, check whether there are remaining jobs to be tailored
-        if len(tailored_results) < len(state["scored_jobs"]):
+        if len(reports) < len(jobs_to_tailor):
             delay = random.uniform(2.0, 4.0)
             await asyncio.sleep(delay)
             
     
     return {
         "tailored_jobs": tailored_results,
+        "tailor_reports": reports,
     }
     
     
 SCORE_EMOJI = {"A": "🟢", "B": "🟡", "C": "🟠", "D": "🔴", "F": "⚫"}
 
+
+_STATUS_HEADLINE = {
+    "applied":  "✅ Tailored - every proposed change passed the safety checks",
+    "partial":  "🟡 Tailored - some sections were kept as-is by the safety checks",
+    "rejected": "🚫 Not tailored - the safety checks blocked every proposed change",
+    "failed":   "⚠️ Tailoring failed",
+}
+
+def _render_attempt(r: dict) -> str:
+    out = f"\n🔹 *{r['title']}* — {r['company']}\n{_STATUS_HEADLINE.get(r['status'], r['status'])}\n"
+    if r["status"] == "failed" and r.get("reason"):
+        out += f"Reason: {r['reason']}\n"
+    if r.get("diff_summary"):
+        out += f"\n📝 *Changes*\n{r['diff_summary']}\n"
+    return out + "─────────────────────\n"
 
 async def log_node(state: AgentState) -> dict:
     """
@@ -153,6 +170,16 @@ async def log_node(state: AgentState) -> dict:
 
     logger.info("[LOGG] Generating final report.....")
     mode = state.get("mode", "full")
+    attempts = state.get("tailor_reports", [])
+    if mode == "tailor":
+        report = "✂️ *Tailoring Result*\n─────────────────────\n"
+        if state.get("error"):
+            report += f"⚠️ Error: {state['error']}\n"
+        if not attempts:
+            report += "\nNothing was tailored - see the logs for details.\n"
+        for r in attempts:
+            report += _render_attempt(r)
+        return {"final_report": report}
 
     report = f"🎯 *Search Complete: {state['keyword']}*\n"
 
@@ -166,6 +193,8 @@ async def log_node(state: AgentState) -> dict:
         f"Tailored: {len(state.get('tailored_jobs', []))}\n"
     )
     report += "─────────────────────\n"
+    
+    not_tailored = [r for r in attempts if r["status"] in ("rejected", "failed")]
 
     if state.get("tailored_jobs"):
         report += "\n✅ *Ready to Apply*\n"
@@ -223,8 +252,13 @@ async def log_node(state: AgentState) -> dict:
             if sj.gaps:
                 report += f"Gaps: {', '.join(sj.gaps[:3])}\n"
 
-    else:
+    elif not not_tailored:
         report += "\n❌ No jobs scored high enough (A/B) this time. Try a broader keyword, or check back later.\n"
+        
+    if not_tailored:
+        report += "\n⚠️ *Could not tailor*\n"
+        for r in not_tailored:
+            report += _render_attempt(r)
 
     return {"final_report": report}
 

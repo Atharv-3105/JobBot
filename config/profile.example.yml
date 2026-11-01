@@ -1,0 +1,23 @@
+# Example profile shape. Copy to profile.yml and edit.
+# (The bot builds each user's profile through /start onboarding; this file
+# documents the shape of the data and is used as a reference for tests.)
+name: "Your Name"
+target_roles:
+    - "Backend Engineer"
+    - "ML Engineer"
+
+target_locations:
+    - "Remote"
+
+experience_years: 1
+skills:
+    core: ["Python"]          # Skills you could talk about even when asleep
+    primary: ["FastAPI"]      # Skills you use regularly
+    secondary: ["PostgreSQL"] # Skills you know but use less often
+    basic: ["Git"]            # Skills you only know the basics of
+
+target_companies:
+    - type: "startup"
+
+min_score_to_apply: "B"
+salary_min_inr: 0

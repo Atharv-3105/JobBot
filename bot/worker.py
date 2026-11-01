@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, field 
 from typing import Any , Dict, Set
 from telegram import Bot
-from telegram.error import TelegramError
+from telegram.error import TelegramError, BadRequest
 from agent.orchestrator import pipeline 
 
 
@@ -294,11 +294,16 @@ async def _send_result(task: BotTask, final_state: dict):
     """ 
         Function which send's the final report and PDFs to the user
     """
+    text = final_state["final_report"]
+    if len(text) > 4000:
+        text = text[:3990] + "\n......(truncated)"
     try:
-        await task.bot.send_message(
-            chat_id = task.chat_id, text = final_state["final_report"],
-            parse_mode = 'Markdown'
-        )
+        await task.bot.send_message(chat_id = task.chat_id, text = text, parse_mode = 'Markdown')
+    
+    except BadRequest:
+        await task.bot.send_message(chat_id = task.chat_id, text = text)
+        
+        
         
     except TelegramError as e:
         logger.error(f"[QUEUE] failed to send final report to user {task.user_id}: {e}")
@@ -307,7 +312,8 @@ async def _send_result(task: BotTask, final_state: dict):
     if final_state.get("tailored_jobs"):
         for job in final_state["tailored_jobs"]:
             pdf_path = job["pdf_path"]
-            caption = f"**{job['title']}** at {job['company']} (Score: {job['score']})"
+            score_part = f" (Score: {job['score']})" if job.get("scored", True) else ""
+            caption = f"**{job['title']}** at {job['company']}{score_part}"
             
             #File existence check 
             if not os.path.exists(pdf_path):
@@ -328,7 +334,8 @@ async def _send_result(task: BotTask, final_state: dict):
     else:
         #tailored_jobs can be empty for two different reasons - don't conflate them.
         scored_ab = any(sj.score in ("A", "B") for sj in final_state.get("scored_jobs", []))
-        if scored_ab:
+        attempted = bool(final_state.get("tailor_reports"))
+        if scored_ab or attempted:
             #A/B jobs existed, but tailoring itself didn't succeed (e.g. the LLM's
             #proposed changes failed a validation guard) - the final_report above
             #already explains this via Pipeline Stats, no separate message needed here.

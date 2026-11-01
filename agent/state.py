@@ -21,8 +21,7 @@ class AgentState(TypedDict):
     #Pipeline Data 
     raw_jobs:   List[JobListing]
     scored_jobs:    List[ScoredJob]
-    tailored_jobs:  List[Dict[str, str]]
-    
+    tailored_jobs:  List[Dict[str, Any]]
     final_report:   str 
     error:          Optional[str]
     

@@ -1,0 +1,172 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\geometry{a4paper, margin=0.45in, top=0.3in, bottom=0.25in}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{xcolor}
+
+% Define color
+\definecolor{linkcolor}{RGB}{0,80,150}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=linkcolor,
+    urlcolor=linkcolor,
+}
+\usepackage{setspace}
+\setlength{\parskip}{0pt}
+\setlength{\parsep}{0pt}
+\setlength{\headsep}{0pt}
+\setlength{\topskip}{0pt}
+\setlength{\textfloatsep}{0pt}
+
+% Section formatting
+\titleformat{\section}
+  {\large\scshape\raggedright}
+  {}{0em}
+  {}[\titlerule]
+\titlespacing{\section}{0pt}{0.8ex}{0.3ex}
+
+% Remove page numbers
+\pagestyle{empty}
+
+% Custom list settings for consistency
+\setlist[itemize]{leftmargin=12pt, itemsep=0pt, topsep=1pt, parsep=0pt}
+\setlist[description]{itemsep=1pt, topsep=0pt, parsep=0pt, partopsep=0pt}
+
+\begin{document}
+\small
+
+%------------------------------------------------
+%    HEADER
+%------------------------------------------------
+\begin{center}
+
+    {\huge\scshape Your Name}
+    \vspace{0.4ex}
+
+    \href{mailto:you@example.com}{you@example.com} \ $\vert$ \
+    \href{tel:+910000000000}{+91 00000 00000} \ $\vert$ \
+    City, State \\
+    \vspace{0.4ex}
+    \href{https://www.linkedin.com/in/your-handle/}{LinkedIn} \ $\vert$ \
+    \href{https://github.com/your-handle}{GitHub} \ $\vert$ \
+    \href{https://huggingface.co/your-handle}{HuggingFace} \ $\vert$ \
+    \href{https://leetcode.com/u/your-handle/}{LeetCode}
+\end{center}
+
+%------------------------------------------------
+%    PROFESSIONAL SUMMARY
+%------------------------------------------------
+\section*{Summary}
+AI Engineer experienced in building production-ready LLM applications, multi-agent systems, Retrieval-Augmented Generation (RAG) pipelines, and deep learning solutions using Python, FastAPI, and modern AI frameworks. Strong foundation in machine learning, backend engineering, and distributed systems, with a passion for deploying reliable AI applications at scale.
+
+%------------------------------------------------
+%    SKILLS
+%------------------------------------------------
+\section*{Skills}
+\begin{description}[leftmargin=!,labelwidth=0.5cm, style=nextline]
+
+    \item[\textbf{Languages:}]
+    Python, Go, SQL, C++
+
+    \item[\textbf{AI \& Machine Learning:}]
+    PyTorch, TensorFlow, Scikit-learn, Deep Learning, Computer Vision, Natural Language Processing (NLP), Reinforcement Learning
+
+    \item[\textbf{LLM \& Generative AI:}]
+    Hugging Face Transformers, Retrieval-Augmented Generation (RAG), LangChain, LangGraph, LlamaIndex, Prompt Engineering, Vector Embeddings
+
+    \item[\textbf{AI Deployment \& MLOps:}]
+    FastAPI, REST APIs, vLLM, Docker, AWS (EC2, S3, RDS), GCP, Git, GitHub, CI/CD Pipelines, Weights \& Biases (WandB)
+
+    \item[\textbf{Databases \& Vector Stores:}]
+    PostgreSQL, SQLite, Redis (Caching \& Pub/Sub), ChromaDB, FAISS
+
+    \item[\textbf{AI Developer Tools:}]
+    Claude Code, Cursor, GitHub Copilot, VS Code, Jupyter Notebook
+
+\end{description}
+
+%------------------------------------------------
+%    EXPERIENCE
+%------------------------------------------------
+\section*{Experience}
+\begin{description}[leftmargin=!,labelwidth=0.5cm]
+
+    \item[\textbf{Helionyex Solutions}] \hfill \textbf{Jun 2026 -- Present} \\
+    \textit{Software Developer Intern} \hfill \textit{Remote}
+
+    \begin{itemize}
+        \item Developed core modules for a cross-platform \textbf{Climate Data Reception \& Processing System (CDRPS)} using Electron, React, TypeScript, and PostgreSQL, designing secure authentication, RBAC rules, and station monitoring workflows.
+        \item Designed and implemented a \textbf{real-time data quality validation engine} for meteorological observations, incorporating 10+ WMO-compliant QC rules to automatically catch anomalous readings before PostgreSQL storage.
+        \item Architected high-speed local communications by developing \textbf{20+ secure IPC interfaces}, database transaction repositories, and internal authentication APIs to accelerate feature scaling.
+    \end{itemize}
+
+\end{description}
+
+%------------------------------------------------
+%    PROJECTS
+%------------------------------------------------
+\section*{Projects}
+\begin{description}[leftmargin=!,labelwidth=0.5cm]
+
+   \item[\textbf{ArchiGen AI (Multi-Agent Excalidraw Diagram Generator)}] \hfill \href{https://github.com/Atharv-3105/ArchiGen_AI}{GitHub} \\
+    \textit{Python, FastAPI, React, TypeScript, LangGraph, Excalidraw, Docker, Groq}
+
+    \begin{itemize}
+        \item Engineered a \textbf{multi-agent AI pipeline} using \textbf{LangGraph} and \textbf{Groq} to autonomously layout software architecture diagrams, cutting manual drafting time by \textbf{90\%} and rendering complex graphs in \textbf{under 8 seconds}.
+        \item Implemented a \textbf{self-healing validation loop} with deterministic graph checks and LLM-based repair agents, eliminating rendering errors by \textbf{95\%} while maintaining structural integrity across Excalidraw exports.
+        \item Developed \textbf{real-time streaming infrastructure} using \textbf{FastAPI} Server-Sent Events (SSE), supporting \textbf{5 export formats} with a benchmarked \textbf{sub-100ms} streaming latency under concurrent user sessions.
+    \end{itemize}
+
+    \item[\textbf{AI-Enhanced Semantic File-Manager}] \hfill \href{https://github.com/Atharv-3105/SmartFile-Manager}{GitHub} \\
+    \textit{Go, Python, FastAPI, EasyOCR, Sentence-Transformers, SQLite, Docker}
+
+    \begin{itemize}
+        \item Architected a real-time concurrent file indexing pipeline in Go supporting \textbf{8 concurrent ingestion workers}, indexing \textbf{500+ local documents} via an event-driven processing design.
+        \item Built a Python extraction microservice using EasyOCR and Sentence-Transformers to generate \textbf{384-dimensional semantic embeddings}, enabling sub-\textbf{150 ms} cosine-similarity text retrieval.
+        \item Engineered a containerized microservice architecture with Go, Python, SQLite, and Docker, implementing transactional storage, vector persistence, and automated local file system monitoring.
+    \end{itemize}
+
+    \item[\textbf{Semantic-Duel}] \hfill \href{https://github.com/Atharv-3105/Semantic-Duel}{GitHub} \\
+    \textit{Go, WebSockets, REST APIs, NLP Embeddings, Docker}
+
+    \begin{itemize}
+        \item Architected a \textbf{real-time multiplayer game backend} via \textbf{WebSockets} supporting \textbf{50+ concurrent players} with low \textbf{$\sim$150ms} state synchronization latency.
+        \item Engineered an \textbf{NLP-based semantic scoring engine} using vector embeddings, processing \textbf{100+ similarity evaluations per match} for dynamic game state resolution.
+        \item Designed a \textbf{modular microservices architecture} separating matchmaking, session state, and scoring logic with extensible REST APIs optimized for unified leaderboard integration.
+    \end{itemize}
+
+\end{description}
+
+%------------------------------------------------
+%    RESEARCH IMPLEMENTATIONS
+%------------------------------------------------
+\section*{Research Implementations}
+\begin{itemize}
+    \item Implemented state-of-the-art architectures from scratch using PyTorch: \textbf{Transformer, LLaMA 2, ViT, DDPM, U-Net, GANs, VAE, PPO, SAC, TD3, DDPG, MHA, MLA, LoRA}.
+\end{itemize}
+
+%------------------------------------------------
+%    EDUCATION
+%------------------------------------------------
+\section*{Education}
+\begin{description}[leftmargin=!,labelwidth=0.5cm]
+    \item[\textbf{Bachelor of Technology in Artificial Intelligence \& Machine Learning}] \hfill \textbf{2022 -- 2026} \\
+    Dr. A. P. J. Abdul Kalam Technical University \hfill Lucknow, UP
+\end{description}
+
+%------------------------------------------------
+%    ACHIEVEMENTS \& CERTIFICATIONS
+%------------------------------------------------
+\section*{Achievements \& Certifications}
+\begin{itemize}
+    \item Solved \textbf{600+ Data Structures \& Algorithms} problems on LeetCode.
+    \item Contributed open-source datasets and deep learning models to the \textbf{Hugging Face Hub}
+    \item Mentored \textbf{150+ educators} on Python and Generative AI fundamentals as a Python \& AI Trainer at NimbleQ.
+
+\end{itemize}
+
+\end{document}

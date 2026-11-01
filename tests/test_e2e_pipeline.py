@@ -71,7 +71,10 @@ Software Engineer at TestCorp.
 
 # --- TESTS ---
 
+_HAS_LLM_KEY = any(os.getenv(k) for k in ("GROQ_API_KEY", "GEMINI_API_KEY", "CEREBRAS_API_KEY", "OPEN_ROUTER_API_KEY"))
+
 @pytest.mark.asyncio
+@pytest.mark.skipif(not _HAS_LLM_KEY, reason="needs at least one LLM provider key in .env")
 async def test_tailor_mode_e2e(test_env):
     """
     FAST E2E TEST: Injects a JD directly into Tailor mode.

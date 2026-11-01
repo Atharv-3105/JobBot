@@ -128,6 +128,16 @@ class Provider:
         else:
             logger.warning(f"[LLMRouter]: {self.name} error #{self.error_count}, will retry")
         
+PROVIDER_KEY_ENV = {
+    "openrouter": "OPEN_ROUTER_API_KEY",
+    "openrouter_glm": "OPEN_ROUTER_API_KEY",
+    "openrouter_minimax": "OPEN_ROUTER_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "cerebras": "CEREBRAS_API_KEY",
+}
+
+
 class LLMRouter:
     """ 
         Routes LLM calls across multiple free-tier providers
@@ -137,7 +147,7 @@ class LLMRouter:
     """
     
     def __init__(self):
-        self.providers = [
+        all_providers = [
             Provider(name = "openrouter", priority = 1, rpm_limit = 20, tpm_limit = 200000),
             Provider(name = "openrouter_glm", priority = 1, rpm_limit = 20, tpm_limit = 200000),
             Provider(name = "openrouter_minimax", priority = 1, rpm_limit = 20, tpm_limit = 200000),
@@ -145,6 +155,14 @@ class LLMRouter:
             Provider(name = "gemini", priority = 3, rpm_limit = 15, tpm_limit = 1000000),
             Provider(name = "cerebras", priority = 4, rpm_limit = 30, tpm_limit = 60000),
         ]
+
+        #Only providers whose API key is set are registered, so the bot starts with any subset of keys
+        self.providers = [p for p in all_providers if os.getenv(PROVIDER_KEY_ENV[p.name])]
+        skipped = [p.name for p in all_providers if p not in self.providers]
+        if skipped:
+            logger.warning(f"[LLMRouter]: no API key set for {skipped} - these providers are disabled")
+        if not self.providers:
+            logger.error("[LLMRouter]: no provider API keys are set - every LLM call will fail. See .env.example")
         
         #Get a mutex lock
         self._lock = asyncio.Lock()
@@ -152,10 +170,10 @@ class LLMRouter:
         
     def _init_clients(self):
         #==========Groq============
-        self._groq = AsyncGroq(api_key = os.getenv("GROQ_API_KEY"))
+        self._groq = AsyncGroq(api_key = os.getenv("GROQ_API_KEY")) if os.getenv("GROQ_API_KEY") else None
         
         #==========Gemini===========
-        self._gemini = genai.Client(api_key = os.getenv("GEMINI_API_KEY"))
+        self._gemini = genai.Client(api_key = os.getenv("GEMINI_API_KEY")) if os.getenv("GEMINI_API_KEY") else None
         
         #==========Cerebras==========
         self._cerebras_base = "https://api.cerebras.ai/v1"
@@ -271,6 +289,8 @@ class LLMRouter:
                 #Add small delay before retry to prevent CPU-spped spinning 
                 await asyncio.sleep(1.0)
                 
+        if not self.providers:
+            raise RuntimeError("[LLMRouter]: no provider API keys configured. Copy .env.example to .env and set at least one.")
         raise RuntimeError(f"[LLMRouter]: All providers failed. Tried: {failed_providers}")
     
       

@@ -1,0 +1,66 @@
+# Synonym/alias table for skill-name normalization.
+# Each canonical skill maps to the alternate spellings/abbreviations a JD or
+# resume might use for the SAME underlying skill. This is a re-labeling
+# lookup only - it must never be used to infer a DIFFERENT skill the
+# candidate never claimed (e.g. "containers" does not imply "kubernetes").
+
+python: ["python3", "py"]
+javascript: ["js", "es6", "ecmascript"]
+typescript: ["ts"]
+"c++": ["cpp", "cplusplus"]
+"c#": ["csharp", "c sharp"]
+golang: ["go"]
+
+react: ["react.js", "reactjs"]
+"react native": ["react-native"]
+angular: ["angular.js", "angularjs"]
+vue: ["vue.js", "vuejs"]
+node.js: ["nodejs", "node"]
+next.js: ["nextjs"]
+express.js: ["express", "expressjs"]
+django: ["django rest framework", "drf"]
+flask: []
+fastapi: ["fast api"]
+spring boot: ["spring", "springboot"]
+
+postgresql: ["postgres", "psql"]
+mysql: []
+mongodb: ["mongo"]
+redis: []
+sqlite: ["sqlite3"]
+elasticsearch: ["elastic search"]
+
+aws: ["amazon web services"]
+gcp: ["google cloud platform", "google cloud"]
+azure: ["microsoft azure"]
+docker: ["docker compose", "docker-compose", "containerization"]
+kubernetes: ["k8s"]
+terraform: []
+jenkins: []
+github actions: ["gh actions"]
+ci/cd: ["ci-cd", "cicd", "continuous integration", "continuous deployment"]
+
+git: ["github", "gitlab", "version control"]
+linux: ["unix"]
+rest api: ["restful api", "rest apis", "restful apis"]
+graphql: []
+grpc: []
+
+pandas: []
+numpy: []
+pytorch: ["torch"]
+tensorflow: ["tf"]
+scikit-learn: ["sklearn", "scikit learn"]
+
+machine learning: ["ml"]
+deep learning: ["dl"]
+natural language processing: ["nlp"]
+large language models: ["llm", "llms"]
+
+html: ["html5"]
+css: ["css3"]
+tailwind: ["tailwindcss", "tailwind css"]
+
+celery: []
+rabbitmq: ["rabbit mq"]
+kafka: ["apache kafka"]

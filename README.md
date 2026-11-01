@@ -146,7 +146,7 @@ I hypothesized the validation guards above might be so strict that they'd silent
 
 That audit also turned up a genuinely embarrassing bug along the way: the job description text was being saved to the database but never actually attached to the object the scoring and tailoring pipeline read from — meaning `/score` and `/tailor` had been silently evaluating against an **empty job description** for some unknown period before I caught it. I only found it because the testing loop was adversarial enough to make the failure visible instead of average-case-plausible. That's the whole reason the audit exists: measuring your own system honestly and being willing to publish what you find, including when it's bad, is worth more than a green checkmark you didn't actually earn.
 
-The project currently has 31 passing automated tests (`pytest tests/ -v`) spanning the validation guards, the failover router, the task queue, and the database layer.
+The project currently has 36 offline automated tests (see "Running the tests" below) spanning the validation guards, the failover router, the task queue, and the database layer.
 
 ---
 
@@ -191,15 +191,19 @@ source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Create a `.env` file:
+Copy the example env file and fill it in. You need at least one LLM key; the router only uses providers whose key is set, so the more you add, the better the failover:
+
+```bash
+cp .env.example .env            # Windows: copy .env.example .env
+```
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
+ADMIN_USER_ID=your_telegram_user_id
 GROQ_API_KEY=your_groq_key
 GEMINI_API_KEY=your_gemini_key
 CEREBRAS_API_KEY=your_cerebras_key
 OPEN_ROUTER_API_KEY=your_openrouter_key
-ADMIN_USER_ID=your_telegram_user_id
 ```
 
 ```bash
@@ -207,6 +211,15 @@ python -m bot.main
 ```
 
 Message your bot on Telegram and send `/start`.
+
+**Running the tests** (no API keys needed; one real-LLM test skips itself without a key):
+
+```bash
+pip install -r requirements-dev.txt
+pytest -m "not slow" --ignore=tests/test_llm_providers.py --ignore=tests/test_e2e_real_llm.py
+```
+
+`config/base_resume.tex` and `config/profile.example.yml` are placeholder fixtures, not a real person's data. In the bot itself, each user uploads their own résumé during `/start` onboarding.
 
 ---
 
@@ -222,7 +235,7 @@ JobBot/
 ├── db/              # SQLAlchemy models + CRUD, including the sliding-window rate limiter
 ├── browser/         # Stealth Playwright context (Wellfound only)
 ├── config/          # Portal allowlist, skill synonym table, base résumé fixture
-├── tests/           # 31 passing tests: mock-based guard matrix, real-LLM matrix, queue/DB tests
+├── tests/           # 36 offline tests (guard matrix, queue/DB, crawler parsers) + opt-in real-LLM tests
 └── testing-audit.md # The 0%-to-100% story, in full, with raw data
 ```
 

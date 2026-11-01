@@ -211,7 +211,7 @@ async def run_all_tests():
         "GROQ_API_KEY": os.getenv("GROQ_API_KEY"),
         "GEMINI_API_KEY": os.getenv("GEMINI_API_KEY"),
         "CEREBRAS_API_KEY": os.getenv("CEREBRAS_API_KEY"),
-        "OPENROUTER_API_KEY": os.getenv("OPENROUTER_API_KEY"),
+        "OPEN_ROUTER_API_KEY": os.getenv("OPEN_ROUTER_API_KEY"),
     }
     
     for key_name, key_val in keys.items():

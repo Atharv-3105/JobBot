@@ -85,7 +85,7 @@ async def test_lever_crawler():
     mock_lever_response = [
         {
             "id": "abc-123",
-            "title": "ML Engineer",
+            "text": "ML Engineer",
             "hostedUrl": "https://lever/testcorp/abc-123",
             "categories": {"location": "Remote"},
             "descriptionPlain": "Build PyTorch and FastAPI applications."
@@ -108,30 +108,26 @@ async def test_lever_crawler():
 
 @pytest.mark.asyncio
 async def test_ashby_crawler():
-    """Test Ashby crawler parser logic using GraphQL mock."""
+    """Test Ashby crawler parser logic with a mocked posting-api response."""
     crawler = AshbyCrawler(companies=["testcorp"], max_results=2)
     
-    mock_graphql_response = {
-        "data": {
-            "jobBoard": {
-                "jobs": [
-                    {
-                        "id": "ashby-id-1",
-                        "title": "Security Engineer",
-                        "jobBoardUrl": "https://ashby/testcorp/ashby-id-1",
-                        "locationName": "San Francisco",
-                        "descriptionHtml": "Protect our cloud architecture."
-                    }
-                ]
+    mock_ashby_response = {
+        "jobs": [
+            {
+                "id": "ashby-id-1",
+                "title": "Security Engineer",
+                "jobUrl": "https://ashby/testcorp/ashby-id-1",
+                "location": "San Francisco",
+                "descriptionHtml": "Protect our cloud architecture."
             }
-        }
+        ]
     }
     
     mock_response = MagicMock()
-    mock_response.json.return_value = mock_graphql_response
+    mock_response.json.return_value = mock_ashby_response
     mock_response.raise_for_status = MagicMock()
     
-    with patch("httpx.AsyncClient.post", AsyncMock(return_value=mock_response)):
+    with patch("httpx.AsyncClient.get", AsyncMock(return_value=mock_response)):
         results = await crawler.search("Security")
         assert len(results) == 1
         job = results[0]
